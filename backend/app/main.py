@@ -7,7 +7,8 @@ from app.db import init_db, get_db_session
 
 # Import routers
 from app.routers import auth, family
-# from app.routers import investments, assets, income, expenses, insurance, projections
+# Will uncomment these as they're implemented:
+from app.routers import investments, assets, income, expenses, insurance, projections
 
 # Set up logging
 setup_logging()
@@ -54,11 +55,12 @@ def on_startup():
 
 
 # Include routers
-app.include_router(auth.router, prefix=settings.API_PREFIX, tags=["auth"])
-app.include_router(family.router, prefix=settings.API_PREFIX, tags=["family"])
-# app.include_router(investments.router, prefix=settings.API_PREFIX, tags=["investments"])
-# app.include_router(assets.router, prefix=settings.API_PREFIX, tags=["assets"])
-# app.include_router(income.router, prefix=settings.API_PREFIX, tags=["income"])
-# app.include_router(expenses.router, prefix=settings.API_PREFIX, tags=["expenses"])
-# app.include_router(insurance.router, prefix=settings.API_PREFIX, tags=["insurance"])
-# app.include_router(projections.router, prefix=settings.API_PREFIX, tags=["projections"]) 
+app.include_router(auth, prefix=settings.API_PREFIX, tags=["auth"])
+app.include_router(family, prefix=settings.API_PREFIX, tags=["family"])
+# Will uncomment these as they're implemented:
+app.include_router(investments, prefix=settings.API_PREFIX, tags=["investments"])
+app.include_router(assets, prefix=settings.API_PREFIX, tags=["assets"])
+app.include_router(income, prefix=settings.API_PREFIX, tags=["income"])
+app.include_router(expenses, prefix=settings.API_PREFIX, tags=["expenses"])
+app.include_router(insurance, prefix=settings.API_PREFIX, tags=["insurance"])
+app.include_router(projections, prefix=settings.API_PREFIX, tags=["projections"]) 

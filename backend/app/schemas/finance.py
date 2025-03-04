@@ -233,4 +233,11 @@ class IncomeSourceList(BaseModel):
 
 class ExpenseList(BaseModel):
     """Schema for a list of expenses."""
-    expenses: List[Expense] 
+    expenses: List[Expense]
+
+
+class ExpenseCopyRequest(BaseModel):
+    """Schema for copying an expense to multiple years."""
+    target_years: List[int] = Field(..., description="The years to copy the expense to")
+    adjust_amount: Optional[float] = Field(None, ge=0.0, description="Optional adjusted amount for the copied expenses")
+    end_year: Optional[int] = Field(None, description="Optional end year for the copied expenses") 

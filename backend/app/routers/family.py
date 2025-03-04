@@ -138,7 +138,7 @@ def update_family_member(
     return family_member
 
 
-@router.delete("/{family_member_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/{family_member_id}")
 def delete_family_member(
     family_member_id: int,
     db: Session = Depends(get_db_session),
