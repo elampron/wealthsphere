@@ -31,6 +31,9 @@ export function Header() {
     { name: 'Dashboard', path: '/' },
     { name: 'Accounts', path: '/accounts' },
     { name: 'Family', path: '/family' },
+    { name: 'Assets', path: '/assets' },
+    { name: 'Income Sources', path: '/income' },
+    { name: 'Insurance Policies', path: '/insurance' },
     { name: 'Expenses', path: '/expenses' },
     { name: 'Projections', path: '/projections' },
   ];

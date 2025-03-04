@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   Table,
   TableBody,
@@ -12,22 +12,61 @@ import {
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { investmentApi } from "@/lib/api/investments";
+import { Skeleton } from "@/components/ui/skeleton";
+import { useToast } from "@/components/ui/use-toast";
+import { AccountForm } from "@/components/forms/AccountForm";
 
-// Mock data (replace with actual API data later)
-const mockAccounts = [
-  { id: "1", name: "TD RRSP", type: "RRSP", balance: 150000, returnRate: 7.2, lastUpdated: "2023-12-15" },
-  { id: "2", name: "Questrade RRSP", type: "RRSP", balance: 220000, returnRate: 8.1, lastUpdated: "2023-12-10" },
-  { id: "3", name: "WealthSimple TFSA", type: "TFSA", balance: 85000, returnRate: 6.5, lastUpdated: "2023-12-12" },
-  { id: "4", name: "RBC Non-Reg", type: "Non-Registered", balance: 45000, returnRate: 5.9, lastUpdated: "2023-12-14" },
-];
+// Define the interface to match our API data
+interface AccountData {
+  id: number;
+  account_name: string;
+  account_type: string;
+  balance: number;
+  annual_return_rate: number;
+  family_member_id: number;
+  created_at: string;
+  updated_at: string;
+}
 
 export default function AccountsPage() {
   const [activeTab, setActiveTab] = useState("all");
+  const [accounts, setAccounts] = useState<AccountData[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [isFormOpen, setIsFormOpen] = useState(false);
+  const [editingAccount, setEditingAccount] = useState<AccountData | null>(null);
+  const { toast } = useToast();
+
+  // Function to fetch accounts
+  const fetchAccounts = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const data = await investmentApi.getAll();
+      setAccounts(data);
+    } catch (err) {
+      console.error("Failed to fetch accounts:", err);
+      setError("Failed to load accounts. Please try again.");
+      toast({
+        title: "Error",
+        description: "Could not load account data. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Fetch accounts from API
+  useEffect(() => {
+    fetchAccounts();
+  }, [toast]);
   
   // Filter accounts based on active tab
   const filteredAccounts = activeTab === "all" 
-    ? mockAccounts 
-    : mockAccounts.filter(account => account.type === activeTab);
+    ? accounts 
+    : accounts.filter(account => account.account_type === activeTab);
   
   const formatCurrency = (value: number) => {
     return new Intl.NumberFormat('en-CA', {
@@ -40,6 +79,20 @@ export default function AccountsPage() {
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString('en-CA');
   };
+
+  const handleAddAccount = () => {
+    setEditingAccount(null);
+    setIsFormOpen(true);
+  };
+
+  const handleEditAccount = (account: AccountData) => {
+    setEditingAccount(account);
+    setIsFormOpen(true);
+  };
+
+  const handleFormSuccess = () => {
+    fetchAccounts();
+  };
   
   return (
     <div className="container py-8">
@@ -48,107 +101,156 @@ export default function AccountsPage() {
           <h1 className="text-3xl font-bold">Investment Accounts</h1>
           <p className="text-muted-foreground mt-1">Manage your investment accounts and track performance</p>
         </div>
-        <Button className="mt-4 md:mt-0">
+        <Button className="mt-4 md:mt-0" onClick={handleAddAccount}>
           Add New Account
         </Button>
       </div>
       
-      <Card className="mb-8">
-        <CardHeader>
-          <CardTitle>Account Summary</CardTitle>
-          <CardDescription>Overview of your investment accounts</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <Tabs value={activeTab} onValueChange={setActiveTab}>
-            <TabsList className="mb-6">
-              <TabsTrigger value="all">All Accounts</TabsTrigger>
-              <TabsTrigger value="RRSP">RRSP</TabsTrigger>
-              <TabsTrigger value="TFSA">TFSA</TabsTrigger>
-              <TabsTrigger value="Non-Registered">Non-Registered</TabsTrigger>
-            </TabsList>
+      {loading ? (
+        <Card className="mb-8">
+          <CardHeader>
+            <Skeleton className="h-8 w-1/3" />
+            <Skeleton className="h-4 w-1/2 mt-2" />
+          </CardHeader>
+          <CardContent>
+            <Skeleton className="h-8 w-full mb-4" />
+            <Skeleton className="h-12 w-full mb-2" />
+            <Skeleton className="h-12 w-full mb-2" />
+            <Skeleton className="h-12 w-full mb-2" />
+          </CardContent>
+        </Card>
+      ) : error ? (
+        <Card className="mb-8">
+          <CardHeader>
+            <CardTitle>Error</CardTitle>
+            <CardDescription>We encountered a problem loading your accounts</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <p className="text-destructive">{error}</p>
+            <Button className="mt-4" onClick={() => window.location.reload()}>Try Again</Button>
+          </CardContent>
+        </Card>
+      ) : (
+        <>
+          <Card className="mb-8">
+            <CardHeader>
+              <CardTitle>Account Summary</CardTitle>
+              <CardDescription>Overview of your investment accounts</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Tabs value={activeTab} onValueChange={setActiveTab}>
+                <TabsList className="mb-6">
+                  <TabsTrigger value="all">All Accounts</TabsTrigger>
+                  <TabsTrigger value="RRSP">RRSP</TabsTrigger>
+                  <TabsTrigger value="TFSA">TFSA</TabsTrigger>
+                  <TabsTrigger value="Non-Registered">Non-Registered</TabsTrigger>
+                </TabsList>
+                
+                <TabsContent value={activeTab}>
+                  {filteredAccounts.length === 0 ? (
+                    <div className="text-center py-8">
+                      <p className="text-muted-foreground">No accounts found in this category.</p>
+                      <Button variant="outline" className="mt-4" onClick={handleAddAccount}>
+                        Add Your First Account
+                      </Button>
+                    </div>
+                  ) : (
+                    <div className="rounded-md border">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Account Name</TableHead>
+                            <TableHead>Type</TableHead>
+                            <TableHead className="text-right">Balance</TableHead>
+                            <TableHead className="text-right">Return Rate</TableHead>
+                            <TableHead className="text-right">Last Updated</TableHead>
+                            <TableHead></TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {filteredAccounts.map((account) => (
+                            <TableRow key={account.id}>
+                              <TableCell className="font-medium">{account.account_name}</TableCell>
+                              <TableCell>{account.account_type}</TableCell>
+                              <TableCell className="text-right">{formatCurrency(account.balance)}</TableCell>
+                              <TableCell className="text-right">{account.annual_return_rate}%</TableCell>
+                              <TableCell className="text-right">{formatDate(account.updated_at)}</TableCell>
+                              <TableCell className="text-right">
+                                <Button 
+                                  variant="ghost" 
+                                  size="sm"
+                                  onClick={() => handleEditAccount(account)}
+                                >
+                                  Edit
+                                </Button>
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  )}
+                </TabsContent>
+              </Tabs>
+            </CardContent>
+          </Card>
+          
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <Card>
+              <CardHeader>
+                <CardTitle>Total RRSP</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-3xl font-bold">
+                  {formatCurrency(
+                    accounts
+                      .filter(a => a.account_type === "RRSP")
+                      .reduce((sum, a) => sum + a.balance, 0)
+                  )}
+                </div>
+              </CardContent>
+            </Card>
             
-            <TabsContent value={activeTab}>
-              <div className="rounded-md border">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Account Name</TableHead>
-                      <TableHead>Type</TableHead>
-                      <TableHead className="text-right">Balance</TableHead>
-                      <TableHead className="text-right">Return Rate</TableHead>
-                      <TableHead className="text-right">Last Updated</TableHead>
-                      <TableHead></TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {filteredAccounts.map((account) => (
-                      <TableRow key={account.id}>
-                        <TableCell className="font-medium">{account.name}</TableCell>
-                        <TableCell>{account.type}</TableCell>
-                        <TableCell className="text-right">{formatCurrency(account.balance)}</TableCell>
-                        <TableCell className="text-right">{account.returnRate}%</TableCell>
-                        <TableCell className="text-right">{formatDate(account.lastUpdated)}</TableCell>
-                        <TableCell className="text-right">
-                          <Button variant="ghost" size="sm">
-                            Edit
-                          </Button>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-            </TabsContent>
-          </Tabs>
-        </CardContent>
-      </Card>
-      
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <Card>
-          <CardHeader>
-            <CardTitle>Total RRSP</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-3xl font-bold">
-              {formatCurrency(
-                mockAccounts
-                  .filter(a => a.type === "RRSP")
-                  .reduce((sum, a) => sum + a.balance, 0)
-              )}
-            </div>
-          </CardContent>
-        </Card>
-        
-        <Card>
-          <CardHeader>
-            <CardTitle>Total TFSA</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-3xl font-bold">
-              {formatCurrency(
-                mockAccounts
-                  .filter(a => a.type === "TFSA")
-                  .reduce((sum, a) => sum + a.balance, 0)
-              )}
-            </div>
-          </CardContent>
-        </Card>
-        
-        <Card>
-          <CardHeader>
-            <CardTitle>Total Non-Registered</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-3xl font-bold">
-              {formatCurrency(
-                mockAccounts
-                  .filter(a => a.type === "Non-Registered")
-                  .reduce((sum, a) => sum + a.balance, 0)
-              )}
-            </div>
-          </CardContent>
-        </Card>
-      </div>
+            <Card>
+              <CardHeader>
+                <CardTitle>Total TFSA</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-3xl font-bold">
+                  {formatCurrency(
+                    accounts
+                      .filter(a => a.account_type === "TFSA")
+                      .reduce((sum, a) => sum + a.balance, 0)
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+            
+            <Card>
+              <CardHeader>
+                <CardTitle>Total Non-Registered</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-3xl font-bold">
+                  {formatCurrency(
+                    accounts
+                      .filter(a => a.account_type === "Non-Registered")
+                      .reduce((sum, a) => sum + a.balance, 0)
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        </>
+      )}
+
+      {/* Account Form */}
+      <AccountForm
+        isOpen={isFormOpen}
+        onClose={() => setIsFormOpen(false)}
+        onSuccess={handleFormSuccess}
+        initialData={editingAccount || undefined}
+      />
     </div>
   );
 } 
