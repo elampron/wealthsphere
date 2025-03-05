@@ -142,6 +142,7 @@ class Expense(Base):
     
     name = Column(String, nullable=False)
     expense_type = Column(Enum(ExpenseType), nullable=False)
+    category = Column(String, nullable=True)  # Adding category field
     amount = Column(Float, nullable=False, default=0.0)  # Annual amount
     start_year = Column(Integer, nullable=False)  # Year this expense starts
     end_year = Column(Integer, nullable=True)  # Year this expense ends (if applicable)

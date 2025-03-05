@@ -9,7 +9,7 @@ import {
   Sheet, SheetContent, SheetDescription, 
   SheetHeader, SheetTitle, SheetFooter
 } from "@/components/ui/sheet";
-import { expenseApi } from "@/lib/api/expenses";
+import { expenseApi, ExpenseTypeEnum } from "@/lib/api/expenses";
 import { familyApi } from "@/lib/api/family";
 import { useToast } from "@/components/ui/use-toast";
 
@@ -34,6 +34,7 @@ interface FamilyMember {
   relationship: string;
 }
 
+// Restore original expense types
 const EXPENSE_TYPES = ["Recurring", "Discretionary", "Special"];
 
 const EXPENSE_CATEGORIES = [
@@ -52,6 +53,21 @@ const EXPENSE_CATEGORIES = [
   "Travel",
   "Other"
 ];
+
+// Map user-friendly types to backend enum values
+const mapTypeToBackendValue = (type: string): string => {
+  // Map the user-friendly type to the corresponding backend enum value
+  switch(type) {
+    case "Recurring":
+      return ExpenseTypeEnum.HOUSING; // Default for recurring expenses
+    case "Discretionary":
+      return ExpenseTypeEnum.ENTERTAINMENT; // Default for discretionary
+    case "Special":
+      return ExpenseTypeEnum.SPECIAL; // Special maps directly
+    default:
+      return ExpenseTypeEnum.OTHER; // Fallback
+  }
+};
 
 export function ExpenseForm({ 
   isOpen, 
@@ -142,7 +158,7 @@ export function ExpenseForm({
       const apiData = {
         name: formData.name,
         amount: formData.amount,
-        expense_type: formData.type,  // Map 'type' to 'expense_type'
+        expense_type: mapTypeToBackendValue(formData.type), // Map to backend enum value
         category: formData.category,
         family_member_id: formData.family_member_id,
         start_year: formData.year,   // Map 'year' to 'start_year'
@@ -235,7 +251,9 @@ export function ExpenseForm({
               </SelectTrigger>
               <SelectContent>
                 {EXPENSE_TYPES.map(type => (
-                  <SelectItem key={type} value={type}>{type}</SelectItem>
+                  <SelectItem key={type} value={type}>
+                    {type}
+                  </SelectItem>
                 ))}
               </SelectContent>
             </Select>

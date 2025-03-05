@@ -59,11 +59,19 @@ export function AccountForm({
       setIsLoading(true);
       try {
         const members = await familyApi.getAll();
-        setFamilyMembers(members);
+        
+        // Map the API response to match our local interface
+        const mappedMembers = members.map(member => ({
+          id: member.id,
+          name: `${member.first_name} ${member.last_name}`,
+          relationship: member.relationship_type
+        }));
+        
+        setFamilyMembers(mappedMembers);
         
         // Set default family member if none is selected
-        if (!initialData && members.length > 0 && !formData.family_member_id) {
-          setFormData(prev => ({ ...prev, family_member_id: members[0].id }));
+        if (!initialData && mappedMembers.length > 0 && !formData.family_member_id) {
+          setFormData(prev => ({ ...prev, family_member_id: mappedMembers[0].id }));
         }
       } catch (error) {
         console.error('Failed to fetch family members:', error);
@@ -114,16 +122,27 @@ export function AccountForm({
     setIsSubmitting(true);
 
     try {
+      // Map form data to backend field names
+      const apiData = {
+        name: formData.account_name,
+        account_type: formData.account_type,
+        current_balance: formData.balance,
+        expected_return_rate: formData.annual_return_rate / 100, // Convert percentage to decimal
+        family_member_id: formData.family_member_id
+      };
+      
+      console.log("Submitting account data:", apiData);
+
       if (initialData?.id) {
         // Update existing account
-        await investmentApi.update(initialData.id, formData);
+        await investmentApi.update(initialData.id, apiData);
         toast({
           title: "Success",
           description: "Account updated successfully.",
         });
       } else {
         // Create new account
-        await investmentApi.create(formData);
+        await investmentApi.create(apiData);
         toast({
           title: "Success",
           description: "Account added successfully.",

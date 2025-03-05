@@ -26,10 +26,10 @@ def calculate_age(birth_date: date, target_year: int) -> int:
 
 def is_alive(member: FamilyMember, year: int) -> bool:
     """Determine if a family member is alive in a given projection year."""
-    age = calculate_age(member.birth_date, year)
+    age = calculate_age(member.date_of_birth, year)
     
     # Default to max age of 100 if life_expectancy not set
-    max_age = member.life_expectancy or 100
+    max_age = member.expected_death_age or 100
     
     return age <= max_age
 
@@ -44,17 +44,23 @@ def calculate_rrsp_to_rrif_conversion(
     In Canada, RRSP must be converted to RRIF by the end of the year in which
     the account holder turns 71.
     """
+    print(f"DEBUG: Checking RRSP conversion for account {account.id} ({account.name}) in year {year}")
+    
     if account.account_type != AccountType.RRSP:
+        print(f"DEBUG: Account {account.id} is not an RRSP (type: {account.account_type}), skipping conversion check")
         return False
         
-    age = calculate_age(member.birth_date, year)
+    age = calculate_age(member.date_of_birth, year)
+    print(f"DEBUG: Family member {member.id} age in year {year}: {age}")
     
     # If explicitly defined in the account
     if account.expected_conversion_year and account.expected_conversion_year == year:
+        print(f"DEBUG: Account {account.id} has expected conversion year {account.expected_conversion_year} matching current year {year}")
         return True
         
     # Mandatory conversion at age 71
     if age == 71:
+        print(f"DEBUG: Family member {member.id} is 71 in year {year}, triggering mandatory RRSP to RRIF conversion")
         return True
         
     return False
@@ -447,7 +453,7 @@ def calculate_withdrawal_strategy(
     for account in active_accounts:
         if account.account_type == AccountType.RRIF:
             member = next(m for m in family_members if m.id == account.family_member_id)
-            age = calculate_age(member.birth_date, year)
+            age = calculate_age(member.date_of_birth, year)
             
             account_value = projected_accounts.get(year, {}).get(account.id, account.current_balance)
             min_withdrawal = calculate_rrif_minimum_withdrawal(account_value, age)

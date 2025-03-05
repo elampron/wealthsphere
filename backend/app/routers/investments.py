@@ -55,7 +55,13 @@ def list_investment_accounts(
     if family_member_id:
         query = query.filter(InvestmentAccount.family_member_id == family_member_id)
     
-    return query.all()
+    accounts = query.all()
+    
+    # Debug logging to see account types
+    for account in accounts:
+        print(f"Account ID: {account.id}, Name: {account.name}, Type: {account.account_type}")
+        
+    return accounts
 
 
 @router.get("/investment-accounts/{investment_id}", response_model=InvestmentAccountRead)

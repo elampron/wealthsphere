@@ -16,14 +16,23 @@ import { investmentApi } from "@/lib/api/investments";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/components/ui/use-toast";
 import { AccountForm } from "@/components/forms/AccountForm";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Trash2 } from "lucide-react";
 
 // Define the interface to match our API data
 interface AccountData {
   id: number;
-  account_name: string;
+  name: string;
   account_type: string;
-  balance: number;
-  annual_return_rate: number;
+  current_balance: number;
+  expected_return_rate: number;
   family_member_id: number;
   created_at: string;
   updated_at: string;
@@ -35,7 +44,9 @@ export default function AccountsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isFormOpen, setIsFormOpen] = useState(false);
-  const [editingAccount, setEditingAccount] = useState<AccountData | null>(null);
+  const [editingAccount, setEditingAccount] = useState<any | null>(null);
+  const [accountToDelete, setAccountToDelete] = useState<AccountData | null>(null);
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const { toast } = useToast();
 
   // Function to fetch accounts
@@ -44,7 +55,19 @@ export default function AccountsPage() {
     setError(null);
     try {
       const data = await investmentApi.getAll();
-      setAccounts(data);
+      console.log("Raw account data from API:", data);
+      // Map the API data to match our AccountData interface
+      const mappedData = data.map(account => ({
+        id: account.id,
+        name: account.name || "",
+        account_type: account.account_type,
+        current_balance: account.current_balance || 0,
+        expected_return_rate: account.expected_return_rate || 0,
+        family_member_id: account.family_member_id,
+        created_at: account.created_at || new Date().toISOString(),
+        updated_at: account.updated_at || new Date().toISOString()
+      }));
+      setAccounts(mappedData);
     } catch (err) {
       console.error("Failed to fetch accounts:", err);
       setError("Failed to load accounts. Please try again.");
@@ -86,8 +109,46 @@ export default function AccountsPage() {
   };
 
   const handleEditAccount = (account: AccountData) => {
-    setEditingAccount(account);
+    // Map AccountData to the format the form expects
+    const formattedAccount = {
+      id: account.id,
+      account_name: account.name,
+      account_type: account.account_type,
+      balance: account.current_balance,
+      annual_return_rate: account.expected_return_rate * 100, // Convert to percentage for form
+      family_member_id: account.family_member_id
+    };
+    setEditingAccount(formattedAccount);
     setIsFormOpen(true);
+  };
+
+  const handleDeleteClick = (account: AccountData) => {
+    setAccountToDelete(account);
+    setIsDeleteDialogOpen(true);
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (!accountToDelete) return;
+    
+    try {
+      await investmentApi.delete(accountToDelete.id);
+      toast({
+        title: "Account deleted",
+        description: `${accountToDelete.name} has been deleted successfully.`,
+      });
+      // Refresh the accounts list
+      fetchAccounts();
+    } catch (err) {
+      console.error("Failed to delete account:", err);
+      toast({
+        title: "Error",
+        description: "Could not delete account. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsDeleteDialogOpen(false);
+      setAccountToDelete(null);
+    }
   };
 
   const handleFormSuccess = () => {
@@ -164,25 +225,35 @@ export default function AccountsPage() {
                             <TableHead className="text-right">Balance</TableHead>
                             <TableHead className="text-right">Return Rate</TableHead>
                             <TableHead className="text-right">Last Updated</TableHead>
-                            <TableHead></TableHead>
+                            <TableHead className="text-right">Actions</TableHead>
                           </TableRow>
                         </TableHeader>
                         <TableBody>
                           {filteredAccounts.map((account) => (
                             <TableRow key={account.id}>
-                              <TableCell className="font-medium">{account.account_name}</TableCell>
+                              <TableCell className="font-medium">{account.name}</TableCell>
                               <TableCell>{account.account_type}</TableCell>
-                              <TableCell className="text-right">{formatCurrency(account.balance)}</TableCell>
-                              <TableCell className="text-right">{account.annual_return_rate}%</TableCell>
+                              <TableCell className="text-right">{formatCurrency(account.current_balance)}</TableCell>
+                              <TableCell className="text-right">{(account.expected_return_rate * 100).toFixed(1)}%</TableCell>
                               <TableCell className="text-right">{formatDate(account.updated_at)}</TableCell>
                               <TableCell className="text-right">
-                                <Button 
-                                  variant="ghost" 
-                                  size="sm"
-                                  onClick={() => handleEditAccount(account)}
-                                >
-                                  Edit
-                                </Button>
+                                <div className="flex justify-end space-x-1">
+                                  <Button 
+                                    variant="ghost" 
+                                    size="sm"
+                                    onClick={() => handleEditAccount(account)}
+                                  >
+                                    Edit
+                                  </Button>
+                                  <Button 
+                                    variant="ghost" 
+                                    size="sm"
+                                    onClick={() => handleDeleteClick(account)}
+                                    className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                                  >
+                                    <Trash2 className="h-4 w-4" />
+                                  </Button>
+                                </div>
                               </TableCell>
                             </TableRow>
                           ))}
@@ -205,7 +276,7 @@ export default function AccountsPage() {
                   {formatCurrency(
                     accounts
                       .filter(a => a.account_type === "RRSP")
-                      .reduce((sum, a) => sum + a.balance, 0)
+                      .reduce((sum, a) => sum + a.current_balance, 0)
                   )}
                 </div>
               </CardContent>
@@ -220,7 +291,7 @@ export default function AccountsPage() {
                   {formatCurrency(
                     accounts
                       .filter(a => a.account_type === "TFSA")
-                      .reduce((sum, a) => sum + a.balance, 0)
+                      .reduce((sum, a) => sum + a.current_balance, 0)
                   )}
                 </div>
               </CardContent>
@@ -235,7 +306,7 @@ export default function AccountsPage() {
                   {formatCurrency(
                     accounts
                       .filter(a => a.account_type === "Non-Registered")
-                      .reduce((sum, a) => sum + a.balance, 0)
+                      .reduce((sum, a) => sum + a.current_balance, 0)
                   )}
                 </div>
               </CardContent>
@@ -251,6 +322,33 @@ export default function AccountsPage() {
         onSuccess={handleFormSuccess}
         initialData={editingAccount || undefined}
       />
+      
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Are you sure?</DialogTitle>
+            <DialogDescription>
+              This will permanently delete the account "{accountToDelete?.name}". 
+              This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="flex space-x-2 justify-end">
+            <Button 
+              variant="outline" 
+              onClick={() => setIsDeleteDialogOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button 
+              onClick={handleDeleteConfirm}
+              variant="destructive"
+            >
+              Delete
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 } 

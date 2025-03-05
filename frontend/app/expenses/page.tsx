@@ -112,6 +112,30 @@ export default function ExpensesPage() {
     setIsAddDialogOpen(true);
   };
 
+  const handleDeleteExpense = async (expenseId: number) => {
+    if (window.confirm("Are you sure you want to delete this expense?")) {
+      try {
+        await expenseApi.delete(expenseId);
+        
+        // Refresh expense list
+        const data = await expenseApi.getAll(undefined, undefined, currentYear);
+        setExpenses(data);
+        
+        toast({
+          title: "Success",
+          description: "Expense deleted successfully",
+        });
+      } catch (err) {
+        console.error('Failed to delete expense:', err);
+        toast({
+          title: "Error",
+          description: "Failed to delete the expense. Please try again.",
+          variant: "destructive",
+        });
+      }
+    }
+  };
+
   const handleExpenseFormSuccess = async () => {
     try {
       const data = await expenseApi.getAll(undefined, undefined, currentYear);
@@ -284,13 +308,23 @@ export default function ExpensesPage() {
                             <TableCell>{expense.family_member_name || 'Shared'}</TableCell>
                             <TableCell className="text-right">{formatCurrency(expense.amount)}</TableCell>
                             <TableCell className="text-right">
-                              <Button 
-                                variant="ghost" 
-                                size="sm"
-                                onClick={() => handleEditExpense(expense)}
-                              >
-                                Edit
-                              </Button>
+                              <div className="flex justify-end gap-2">
+                                <Button 
+                                  variant="ghost" 
+                                  size="sm"
+                                  onClick={() => handleEditExpense(expense)}
+                                >
+                                  Edit
+                                </Button>
+                                <Button 
+                                  variant="ghost" 
+                                  size="sm"
+                                  className="text-red-500 hover:text-red-700 hover:bg-red-100"
+                                  onClick={() => handleDeleteExpense(expense.id)}
+                                >
+                                  Delete
+                                </Button>
+                              </div>
                             </TableCell>
                           </TableRow>
                         ))

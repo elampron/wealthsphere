@@ -51,15 +51,15 @@ export default function DashboardPage() {
         const accountsData = await investmentApi.getAll();
         const formattedAccounts = accountsData.map(acc => ({
           id: acc.id.toString(),
-          name: acc.account_name,
+          name: acc.name,
           type: acc.account_type as 'RRSP' | 'TFSA' | 'Non-Registered',
-          balance: acc.balance
+          balance: acc.current_balance
         }));
         setAccounts(formattedAccounts);
         
         // Fetch assets
         const assetsData = await assetApi.getAll();
-        const totalAssets = assetsData.reduce((sum, asset) => sum + asset.value, 0);
+        const totalAssets = assetsData.reduce((sum, asset) => sum + asset.current_value, 0);
         setAssets({ totalValue: totalAssets });
         
         // For now, we don't have a liabilities API, so we'll use 0
@@ -74,8 +74,8 @@ export default function DashboardPage() {
         const familyData = await familyApi.getAll();
         const formattedFamily = familyData.map(member => ({
           id: member.id.toString(),
-          name: member.name,
-          relationship: member.relationship
+          name: `${member.first_name} ${member.last_name}`,
+          relationship: member.relationship_type
         }));
         setFamilyMembers(formattedFamily);
         

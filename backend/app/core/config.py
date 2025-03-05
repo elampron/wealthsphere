@@ -16,7 +16,7 @@ class Settings(BaseSettings):
     # JWT Authentication
     SECRET_KEY: str = "CHANGE_THIS_TO_A_STRONG_SECRET_KEY_IN_PRODUCTION"
     ALGORITHM: str = "HS256"
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 43200  # 30 days for development
     
     # Default user for testing/development (if needed)
     FIRST_USER_EMAIL: Optional[str] = None

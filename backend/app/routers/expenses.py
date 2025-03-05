@@ -19,22 +19,32 @@ def create_expense(
     current_user: User = Depends(get_current_user)
 ):
     """Create a new expense."""
-    db_expense = Expense(
-        user_id=current_user.id,
-        name=payload.name,
-        expense_type=payload.expense_type,
-        amount=payload.amount,
-        start_year=payload.start_year,
-        end_year=payload.end_year,
-        expected_growth_rate=payload.expected_growth_rate,
-        is_tax_deductible=payload.is_tax_deductible,
-        notes=payload.notes,
-        family_member_id=payload.family_member_id
-    )
-    db.add(db_expense)
-    db.commit()
-    db.refresh(db_expense)
-    return db_expense
+    try:
+        # Create the expense with the provided data
+        expense = Expense(
+            user_id=current_user.id,
+            name=payload.name,
+            expense_type=payload.expense_type,  # Already mapped in the frontend
+            amount=payload.amount,
+            category=payload.category,  # Added category field
+            start_year=payload.start_year,
+            end_year=payload.end_year,
+            expected_growth_rate=payload.expected_growth_rate,
+            is_tax_deductible=payload.is_tax_deductible,
+            notes=payload.notes,
+            family_member_id=payload.family_member_id
+        )
+        db.add(expense)
+        db.commit()
+        db.refresh(expense)
+        return expense
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Error creating expense: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error creating expense: {str(e)}"
+        )
 
 
 @router.get("/expenses", response_model=List[ExpenseRead])

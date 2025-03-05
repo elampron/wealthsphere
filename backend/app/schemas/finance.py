@@ -180,6 +180,7 @@ class ExpenseBase(BaseModel):
     name: str
     expense_type: ExpenseTypeEnum
     amount: float = Field(0.0, ge=0.0)
+    category: Optional[str] = None
     start_year: int
     end_year: Optional[int] = None
     expected_growth_rate: float = Field(0.0, ge=-1.0, le=1.0)

@@ -28,8 +28,10 @@ from app.services.calculations import (
     calculate_net_worth,
     calculate_cash_flow,
     calculate_account_growth,
+    calculate_asset_growth,
     calculate_withdrawal_strategy,
-    calculate_death_benefit
+    calculate_death_benefit,
+    calculate_rrif_minimum_withdrawal
 )
 
 
@@ -260,7 +262,7 @@ def project_cash_flow(
                 if benefit > 0:
                     death_benefits.append({
                         "family_member_id": member.id,
-                        "family_member_name": member.name,
+                        "family_member_name": f"{member.first_name} {member.last_name}",
                         "benefit_amount": benefit
                     })
         
@@ -365,7 +367,7 @@ def project_detailed_withdrawals(
             account_details[str(account.id)] = {
                 "account_name": account.name,
                 "account_type": account.account_type,
-                "family_member_name": member.name,
+                "family_member_name": f"{member.first_name} {member.last_name}",
                 "start_value": account_value + withdrawal,  # before withdrawal
                 "withdrawal": withdrawal,
                 "end_value": account_value,  # after withdrawal
