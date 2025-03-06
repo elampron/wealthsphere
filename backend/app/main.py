@@ -63,4 +63,40 @@ app.include_router(assets, prefix=settings.API_PREFIX, tags=["assets"])
 app.include_router(income, prefix=settings.API_PREFIX, tags=["income"])
 app.include_router(expenses, prefix=settings.API_PREFIX, tags=["expenses"])
 app.include_router(insurance, prefix=settings.API_PREFIX, tags=["insurance"])
-app.include_router(projections, prefix=settings.API_PREFIX, tags=["projections"]) 
+app.include_router(projections, prefix=settings.API_PREFIX, tags=["projections"])
+
+# Add a health check endpoint
+@app.get("/api/health", tags=["Health"])
+async def health_check():
+    return {"status": "healthy"}
+
+# Add a development setup endpoint to create a test user if needed
+@app.get("/api/dev-setup", tags=["Development"])
+async def dev_setup(db=Depends(get_db_session)):
+    """
+    Development-only endpoint to set up test data.
+    This should be disabled in production.
+    """
+    if settings.DEBUG:
+        from app.models.user import User
+        from app.core.security import get_password_hash
+        
+        # Check if test user exists
+        test_user = db.query(User).filter(User.email == "test@example.com").first()
+        
+        if not test_user:
+            # Create a test user
+            test_user = User(
+                email="test@example.com",
+                hashed_password=get_password_hash("password123"),
+                first_name="Test",
+                last_name="User",
+                is_active=True
+            )
+            db.add(test_user)
+            db.commit()
+            db.refresh(test_user)
+            
+        return {"message": "Development setup completed successfully", "test_user": test_user.email}
+    
+    return {"message": "Development mode is disabled"} 

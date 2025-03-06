@@ -53,6 +53,33 @@ def project_net_worth(
     investment_accounts = db.query(InvestmentAccount).filter(InvestmentAccount.user_id == current_user.id).all()
     assets = db.query(Asset).filter(Asset.user_id == current_user.id).all()
     
+    print(f"Starting projections with {len(investment_accounts)} accounts and {len(assets)} assets")
+    for account in investment_accounts:
+        print(f"Account: {account.name}, Type: {account.account_type}, Balance: ${account.current_balance:,.2f}")
+    
+    for asset in assets:
+        print(f"Asset: {asset.name}, Type: {asset.asset_type}, Value: ${asset.current_value:,.2f}")
+    
+    # Make a copy of the investment accounts to avoid modifying the original data
+    # This prevents the RRSP to RRIF conversion from affecting the database
+    investment_accounts_copy = []
+    for account in investment_accounts:
+        account_copy = InvestmentAccount(
+            id=account.id,
+            user_id=account.user_id,
+            family_member_id=account.family_member_id,
+            name=account.name,
+            account_type=account.account_type,
+            institution=account.institution,
+            current_balance=account.current_balance,
+            expected_return_rate=account.expected_return_rate,
+            is_taxable=account.is_taxable,
+            notes=account.notes,
+            contribution_room=account.contribution_room,
+            expected_conversion_year=account.expected_conversion_year
+        )
+        investment_accounts_copy.append(account_copy)
+    
     # Track projected account values by year
     projected_accounts = {}
     
@@ -63,23 +90,25 @@ def project_net_worth(
     yearly_projections = {}
     
     for year in range(params.start_year, params.end_year + 1):
+        print(f"\nProjecting for year {year}")
         # Initialize tracking for this year
         if year not in projected_accounts:
             projected_accounts[year] = {}
             
         # RRSP to RRIF conversions that should happen in this year
-        for account in investment_accounts:
+        for account in investment_accounts_copy:
             member = next((m for m in family_members if m.id == account.family_member_id), None)
             if not member:
                 continue
                 
             # Check if this account should convert from RRSP to RRIF
             if calculate_rrsp_to_rrif_conversion(account, member, year):
-                # Create new RRIF account for projections
+                print(f"Converting account {account.name} from RRSP to RRIF in year {year}")
+                # Convert the account for projections - note this doesn't affect the database
                 account.account_type = AccountType.RRIF
         
         # Calculate projected account values for this year
-        for account in investment_accounts:
+        for account in investment_accounts_copy:
             # Skip projections for deceased account holders
             member = next((m for m in family_members if m.id == account.family_member_id), None)
             if not member or not is_alive(member, year):
@@ -96,7 +125,7 @@ def project_net_worth(
         # Calculate net worth for this year
         net_worth = calculate_net_worth(
             family_members,
-            investment_accounts,
+            investment_accounts_copy,
             assets,
             year,
             current_year,
@@ -106,31 +135,31 @@ def project_net_worth(
         # Breakdown by category
         rrsp_total = sum(
             projected_accounts[year].get(a.id, a.current_balance) 
-            for a in investment_accounts 
+            for a in investment_accounts_copy 
             if a.account_type == AccountType.RRSP
         )
         
         tfsa_total = sum(
             projected_accounts[year].get(a.id, a.current_balance) 
-            for a in investment_accounts 
+            for a in investment_accounts_copy 
             if a.account_type == AccountType.TFSA
         )
         
         non_registered_total = sum(
             projected_accounts[year].get(a.id, a.current_balance) 
-            for a in investment_accounts 
+            for a in investment_accounts_copy 
             if a.account_type == AccountType.NON_REGISTERED
         )
         
         rrif_total = sum(
             projected_accounts[year].get(a.id, a.current_balance) 
-            for a in investment_accounts 
+            for a in investment_accounts_copy 
             if a.account_type == AccountType.RRIF
         )
         
         other_investments_total = sum(
             projected_accounts[year].get(a.id, a.current_balance) 
-            for a in investment_accounts 
+            for a in investment_accounts_copy 
             if a.account_type not in [AccountType.RRSP, AccountType.TFSA, AccountType.NON_REGISTERED, AccountType.RRIF]
         )
         
@@ -164,6 +193,15 @@ def project_net_worth(
             "business_total": business_total,
             "other_assets_total": other_assets_total
         }
+        
+        print(f"Year {year} projection: Net Worth = ${net_worth:,.2f}")
+        print(f"  RRSP: ${rrsp_total:,.2f}")
+        print(f"  TFSA: ${tfsa_total:,.2f}")
+        print(f"  Non-Registered: ${non_registered_total:,.2f}")
+        print(f"  RRIF: ${rrif_total:,.2f}")
+        print(f"  Property: ${property_total:,.2f}")
+        print(f"  Business: ${business_total:,.2f}")
+        print(f"  Other Assets: ${other_assets_total:,.2f}")
     
     return yearly_projections
 

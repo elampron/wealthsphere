@@ -310,16 +310,24 @@ def calculate_net_worth(
         # Check if account owner is alive
         member = next((m for m in family_members if m.id == account.family_member_id), None)
         if member and is_alive(member, year):
+            # Log for debugging
+            print(f"Processing account {account.name}, type: {account.account_type}, current balance: {account.current_balance}")
+            
             if year in projected_accounts and account.id in projected_accounts[year]:
-                total_net_worth += projected_accounts[year][account.id]
+                account_value = projected_accounts[year][account.id]
+                print(f"  Using projected value for year {year}: {account_value}")
+                total_net_worth += account_value
             else:
+                print(f"  Using current balance: {account.current_balance}")
                 total_net_worth += account.current_balance
     
     # Add asset values
     for asset in assets:
         projected_value = calculate_asset_growth(asset, year, current_year)
+        print(f"Processing asset {asset.name}, type: {asset.asset_type}, current value: {asset.current_value}, projected: {projected_value}")
         total_net_worth += projected_value
     
+    print(f"Total net worth for year {year}: {total_net_worth}")
     return total_net_worth
 
 
