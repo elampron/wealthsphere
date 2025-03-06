@@ -75,7 +75,21 @@ if not exist "%TARGET_DIR%" (
     echo Repository already exists at %TARGET_DIR%. Skipping clone.
 )
 
-:: Step 4: Navigate to the directory and run Docker Compose
+:: Step 4: Copy the launch script to the target directory
+echo Creating launch script in %TARGET_DIR%.
+copy /Y "%~dp0wealthSphere-launch.bat" "%TARGET_DIR%\wealthSphere-launch.bat"
+if %ERRORLEVEL% NEQ 0 (
+    echo Warning: Failed to copy the launch script. You may need to copy it manually.
+)
+
+:: Step 5: Create desktop shortcut
+echo Creating desktop shortcut.
+powershell -Command "$WshShell = New-Object -ComObject WScript.Shell; $Shortcut = $WshShell.CreateShortcut([System.IO.Path]::Combine($env:USERPROFILE, 'Desktop', 'WealthSphere.lnk')); $Shortcut.TargetPath = [System.IO.Path]::Combine($env:USERPROFILE, 'wealthsphere', 'wealthSphere-launch.bat'); $Shortcut.WorkingDirectory = [System.IO.Path]::Combine($env:USERPROFILE, 'wealthsphere'); $Shortcut.Description = 'Launch WealthSphere'; $Shortcut.IconLocation = 'shell32.dll,138'; $Shortcut.Save()"
+if %ERRORLEVEL% NEQ 0 (
+    echo Warning: Failed to create desktop shortcut. You can still run WealthSphere from %TARGET_DIR%\wealthSphere-launch.bat
+)
+
+:: Step 6: Navigate to the directory and run Docker Compose
 echo Starting the application with Docker Compose.
 cd /d "%TARGET_DIR%"
 set CD_STATUS=%ERRORLEVEL%
@@ -92,10 +106,11 @@ if %DOCKER_STATUS% NEQ 0 (
     exit /b 1
 )
 
-:: Step 5: Open the browser
+:: Step 7: Open the browser
 echo Opening WealthSphere in your browser.
 timeout /t 5 >nul
 start http://localhost:3000
 
 echo Setup complete! WealthSphere should be running at http://localhost:3000
+echo A shortcut has been created on your desktop to easily launch WealthSphere in the future.
 pause
