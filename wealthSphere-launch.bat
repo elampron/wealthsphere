@@ -1,11 +1,21 @@
 @echo off
 setlocal EnableDelayedExpansion
 
-echo Starting WealthSphere...
+echo Starting WealthSphere.
 
 :: Define the target directory in the user's home folder
 set "TARGET_DIR=%USERPROFILE%\wealthsphere"
 echo Target directory: %TARGET_DIR%
+
+:: Check if Rancher Desktop/Docker is running
+echo Checking if Rancher Desktop is running.
+docker ps >nul 2>&1
+if %ERRORLEVEL% NEQ 0 (
+    echo Rancher Desktop does not appear to be running.
+    echo Please start Rancher Desktop and wait for it to initialize, then try again.
+    pause
+    exit /b 1
+)
 
 :: Navigate to the directory
 cd /d "%TARGET_DIR%"
@@ -17,7 +27,7 @@ if %ERRORLEVEL% NEQ 0 (
 )
 
 :: Step 1: Update the code with git pull
-echo Updating WealthSphere to the latest version...
+echo Updating WealthSphere to the latest version.
 git pull
 if %ERRORLEVEL% NEQ 0 (
     echo Warning: Failed to update the repository. Continuing with existing code.
@@ -25,19 +35,19 @@ if %ERRORLEVEL% NEQ 0 (
 )
 
 :: Step 2: Run Docker Compose
-echo Starting the WealthSphere application...
+echo Starting the WealthSphere application.
 docker compose down
 echo Stopped any existing containers.
 
 docker compose up -d
 if %ERRORLEVEL% NEQ 0 (
-    echo Failed to start Docker Compose. Ensure Docker Desktop is running and try again.
+    echo Failed to start Docker Compose. Ensure Rancher Desktop is running properly and try again.
     pause
     exit /b 1
 )
 
 :: Step 3: Open the browser
-echo Opening WealthSphere in your browser...
+echo Opening WealthSphere in your browser.
 timeout /t 5 >nul
 start http://localhost:3000
 
