@@ -35,11 +35,15 @@ const ACCESS_TOKEN_KEY = 'wealthsphere_access_token';
 const USER_KEY = 'wealthsphere_user';
 
 /**
- * Store authentication data in localStorage
+ * Store authentication data in both localStorage and cookies
  */
 export function storeAuthData(authResponse: Partial<AuthResponse>): void {
   if (authResponse.access_token) {
+    // Store in localStorage for easy JS access
     localStorage.setItem(ACCESS_TOKEN_KEY, authResponse.access_token);
+    
+    // Store in cookies for middleware access
+    document.cookie = `${ACCESS_TOKEN_KEY}=${authResponse.access_token}; path=/; max-age=${60 * 60 * 24 * 30}; SameSite=Lax`;
   }
   
   if (authResponse.user) {
@@ -48,11 +52,15 @@ export function storeAuthData(authResponse: Partial<AuthResponse>): void {
 }
 
 /**
- * Clear authentication data from localStorage
+ * Clear authentication data from both localStorage and cookies
  */
 export function clearAuthData(): void {
+  // Clear from localStorage
   localStorage.removeItem(ACCESS_TOKEN_KEY);
   localStorage.removeItem(USER_KEY);
+  
+  // Clear from cookies
+  document.cookie = `${ACCESS_TOKEN_KEY}=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax`;
 }
 
 /**

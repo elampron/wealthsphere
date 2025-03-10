@@ -44,7 +44,13 @@ export default function LoginPage() {
     setError(null);
     try {
       await login(data);
-      router.push('/'); // Redirect to dashboard after login
+      
+      // Check for callback URL in query parameters
+      const searchParams = new URLSearchParams(window.location.search);
+      const callbackUrl = searchParams.get('callbackUrl');
+      
+      // Redirect to callback URL if available, otherwise to dashboard
+      router.push(callbackUrl || '/');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Login failed. Please try again.');
     }

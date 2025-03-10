@@ -56,11 +56,48 @@ function getAuthHeaders(): Record<string, string> | undefined {
 async function handleResponse(response: Response) {
   // Handle non-200 responses
   if (!response.ok) {
-    // Try to extract error message from response body, if any
+    // Special handling for 401 Unauthorized errors
+    if (response.status === 401) {
+      // If we're already on a login-related page, don't trigger an infinite loop
+      if (typeof window !== 'undefined' && 
+         !window.location.pathname.includes('/login') && 
+         !window.location.pathname.includes('/signup')) {
+        
+        // Handle token expiration or invalid token by clearing auth data
+        try {
+          // Dynamic import to avoid circular dependency
+          const { clearAuthData } = require('../auth');
+          clearAuthData();
+          
+          // Redirect to login page with callback URL
+          const callbackUrl = encodeURIComponent(window.location.pathname);
+          window.location.href = `/login?callbackUrl=${callbackUrl}`;
+          
+          // Throw a more specific error for this case
+          throw new Error('Your session has expired. Please log in again.');
+        } catch (e) {
+          if (e instanceof Error && e.message === 'Your session has expired. Please log in again.') {
+            throw e;
+          }
+          // If clearAuthData failed, throw a generic error
+          throw new Error('Authentication failed. Please log in again.');
+        }
+      }
+    }
+    
+    // For non-401 errors or if already on auth page, extract error message
     try {
       const errorData = await response.json();
       throw new Error(errorData.detail || errorData.message || `HTTP error! status: ${response.status}`);
     } catch (e) {
+      // If e was thrown by us, rethrow it
+      if (e instanceof Error && (
+        e.message === 'Your session has expired. Please log in again.' ||
+        e.message === 'Authentication failed. Please log in again.'
+      )) {
+        throw e;
+      }
+      
       // If response body can't be parsed as JSON, throw generic error
       throw new Error(`HTTP error! status: ${response.status}`);
     }
