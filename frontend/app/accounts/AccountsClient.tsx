@@ -27,6 +27,22 @@ import { Trash2 } from "lucide-react";
 import { investmentApi } from "@/src/api/investments";
 import { useRouter } from "next/navigation";
 
+// Interface for client-side account format
+interface ClientInvestmentAccount extends InvestmentAccount {
+  balance: number;
+}
+
+// Interface for server response format
+interface ServerInvestmentAccount {
+  id: number;
+  name: string;
+  account_type: string;
+  current_balance: number;
+  institution?: string;
+  family_member_id: number;
+  updated_at?: string;
+}
+
 interface AccountsClientProps {
   initialAccounts: InvestmentAccount[];
 }
@@ -262,12 +278,46 @@ export default function AccountsClient({ initialAccounts }: AccountsClientProps)
       </div>
 
       {/* Account Form */}
-      <AccountForm
-        isOpen={isFormOpen}
-        onClose={() => setIsFormOpen(false)}
-        onSuccess={handleFormSuccess}
-        initialData={editingAccount || undefined}
-      />
+      <Dialog
+        open={isFormOpen}
+        onOpenChange={(open) => !open && setIsFormOpen(false)}
+      >
+        <DialogContent className="sm:max-w-[500px]">
+          <DialogHeader>
+            <DialogTitle>{editingAccount ? 'Edit Account' : 'Add Investment Account'}</DialogTitle>
+            <DialogDescription>
+              {editingAccount 
+                ? 'Update the details of your investment account.' 
+                : 'Add a new investment account to track your investments.'}
+            </DialogDescription>
+          </DialogHeader>
+          
+          <AccountForm 
+            isOpen={isFormOpen}
+            onClose={() => setIsFormOpen(false)}
+            initialData={editingAccount}
+            onSuccess={(account: ServerInvestmentAccount) => {
+              if (!account) {
+                console.error("Account data is undefined in onSuccess handler");
+                return;
+              }
+              
+              // Convert server account format to client format
+              const clientAccount: Partial<InvestmentAccount> = {
+                id: String(account.id), // Convert to string to match InvestmentAccount interface
+                name: account.name,
+                account_type: account.account_type,
+                institution: account.institution || '',
+                balance: account.current_balance || 0,
+                family_member_id: String(account.family_member_id), // Convert to string to match interface
+                updated_at: account.updated_at
+              };
+              
+              handleFormSuccess(clientAccount as InvestmentAccount);
+            }}
+          />
+        </DialogContent>
+      </Dialog>
       
       {/* Delete Confirmation Dialog */}
       <Dialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>

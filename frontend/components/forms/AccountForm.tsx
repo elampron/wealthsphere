@@ -16,7 +16,7 @@ import { useToast } from "@/components/ui/use-toast";
 interface AccountFormProps {
   isOpen: boolean;
   onClose: () => void;
-  onSuccess: () => void;
+  onSuccess: (account: any) => void;
   initialData?: {
     id: number;
     account_name: string;
@@ -135,20 +135,21 @@ export function AccountForm({
 
       if (initialData?.id) {
         // Update existing account
-        await investmentApi.update(initialData.id, apiData);
+        const updatedAccount = await investmentApi.update(initialData.id, apiData);
         toast({
           title: "Success",
           description: "Account updated successfully.",
         });
+        onSuccess(updatedAccount);
       } else {
         // Create new account
-        await investmentApi.create(apiData);
+        const newAccount = await investmentApi.create(apiData);
         toast({
           title: "Success",
           description: "Account added successfully.",
         });
+        onSuccess(newAccount);
       }
-      onSuccess();
       onClose();
     } catch (error) {
       console.error('Failed to save account:', error);

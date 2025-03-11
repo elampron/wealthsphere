@@ -56,12 +56,12 @@ def calculate_rrsp_to_rrif_conversion(
     # If explicitly defined in the account
     if account.expected_conversion_year and account.expected_conversion_year == year:
         print(f"DEBUG: Account {account.id} has expected conversion year {account.expected_conversion_year} matching current year {year}")
-        return True
+        return False
         
     # Mandatory conversion at age 71
     if age == 71:
         print(f"DEBUG: Family member {member.id} is 71 in year {year}, triggering mandatory RRSP to RRIF conversion")
-        return True
+        return False
         
     return False
 
