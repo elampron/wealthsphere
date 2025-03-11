@@ -9,8 +9,8 @@ import {
   Sheet, SheetContent, SheetDescription, 
   SheetHeader, SheetTitle, SheetFooter
 } from "@/components/ui/sheet";
-import { investmentApi } from "@/lib/api/investments";
-import { familyApi } from "@/lib/api/family";
+import { investmentApi } from "@/src/api/investments";
+import { familyApi } from "@/src/api/family";
 import { useToast } from "@/components/ui/use-toast";
 
 interface AccountFormProps {

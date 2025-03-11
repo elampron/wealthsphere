@@ -1,4 +1,4 @@
-import { serverInvestmentApi } from '@/lib/api/server-investments';
+import { serverInvestmentApi } from '@/src/api/server-investments';
 import AccountsClient from './AccountsClient';
 import { Metadata } from 'next';
 import { cookies } from 'next/headers';

@@ -12,7 +12,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { InvestmentAccount } from "@/lib/api/server-investments";
+import { InvestmentAccount } from "@/src/api/server-investments";
 import { useToast } from "@/components/ui/use-toast";
 import { AccountForm } from "@/components/forms/AccountForm";
 import {
@@ -24,7 +24,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Trash2 } from "lucide-react";
-import { investmentApi } from "@/lib/api/investments";
+import { investmentApi } from "@/src/api/investments";
 import { useRouter } from "next/navigation";
 
 interface AccountsClientProps {

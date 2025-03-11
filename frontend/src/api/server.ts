@@ -3,14 +3,24 @@
  * This file should only be imported in Server Components
  */
 
-// We use the node-fetch in Next.js server environment
-import { cookies } from 'next/headers';
+// We use Next.js server environment
+// Import cookies conditionally to avoid "Cannot use import statement outside a module" error
+let cookies: any;
+try {
+  // This will only work in a Next.js Server Component context
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const headers = require('next/headers');
+  cookies = headers.cookies;
+} catch (e) {
+  // This block will run during build/static analysis but not at runtime
+  console.warn('next/headers module not available, server-side cookies will not work');
+}
 
 // Backend URL for server-to-server communication inside Docker
 const SERVER_API_URL = 'http://backend:8000/api';
 
 // For development mode only - this should be handled properly in production
-const DEV_MODE = process.env.NODE_ENV === 'development';
+const DEV_MODE = typeof process !== 'undefined' && process.env && process.env.NODE_ENV === 'development';
 
 // For development, we'll create a token for the test user
 // This would never be done in production, it's just for development convenience
@@ -34,10 +44,10 @@ async function getDevToken(): Promise<string | null> {
     const response = await fetch(`${SERVER_API_URL}/auth/login`, {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/json'
+        'Content-Type': 'application/x-www-form-urlencoded'
       },
-      body: JSON.stringify({
-        email: "test@example.com",
+      body: new URLSearchParams({
+        username: "test@example.com",
         password: "password123"
       }),
       cache: 'no-store'
@@ -73,19 +83,29 @@ async function getAuthHeaders(): Promise<Record<string, string> | undefined> {
     }
     
     // For production, use cookies
-    const cookieStore = await cookies();
-    const token = cookieStore.get('wealthsphere_token')?.value;
-    
-    if (!token) {
-      console.warn('[Server API] No auth token found in cookies');
+    if (typeof cookies === 'function') {
+      try {
+        const cookieStore = cookies();
+        const token = cookieStore.get('wealthsphere_access_token')?.value;
+        
+        if (!token) {
+          console.warn('[Server API] No auth token found in cookies');
+          return undefined;
+        }
+        
+        return {
+          'Authorization': `Bearer ${token}`
+        };
+      } catch (e) {
+        console.error('[Server API] Error accessing cookies:', e);
+        return undefined;
+      }
+    } else {
+      console.warn('[Server API] Cookies API not available');
       return undefined;
     }
-    
-    return {
-      'Authorization': `Bearer ${token}`
-    };
   } catch (error) {
-    console.error('Error accessing cookies:', error);
+    console.error('[Server API] Error getting auth headers:', error);
     return undefined;
   }
 }
