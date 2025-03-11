@@ -23,6 +23,7 @@ class User(Base):
     income_sources = relationship("IncomeSource", back_populates="user")
     expenses = relationship("Expense", back_populates="user")
     insurance_policies = relationship("InsurancePolicy", back_populates="user")
+    scenarios = relationship("Scenario", back_populates="user")
     
     def __repr__(self):
         return f"<User {self.email}>" 

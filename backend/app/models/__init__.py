@@ -11,6 +11,7 @@ from app.models.finance import (
     ExpenseType,
 )
 from app.models.insurance import InsurancePolicy, InsuranceType
+from app.models.scenario import Scenario
 
 # Import all models here to make them available when importing from app.models
 __all__ = [
@@ -26,4 +27,5 @@ __all__ = [
     "IncomeType",
     "ExpenseType",
     "InsuranceType",
+    "Scenario",
 ] 

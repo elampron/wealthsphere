@@ -60,4 +60,10 @@ from app.schemas.projections import (
     WithdrawalStrategyResult,
     ScenarioType,
     ScenarioParameters
+)
+
+from app.schemas.scenario import (
+    Scenario,
+    ScenarioCreate,
+    ScenarioUpdate
 ) 
