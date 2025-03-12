@@ -9,8 +9,8 @@ import {
   Sheet, SheetContent, SheetDescription, 
   SheetHeader, SheetTitle, SheetFooter
 } from "@/components/ui/sheet";
-import { expenseApi, ExpenseTypeEnum } from "@/lib/api/expenses";
-import { familyApi } from "@/lib/api/family";
+import { expenseApi, ExpenseTypeEnum } from "@/api/expenses";
+import { familyApi } from "@/api/family";
 import { useToast } from "@/components/ui/use-toast";
 
 interface ExpenseFormProps {

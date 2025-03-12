@@ -1,0 +1,51 @@
+# WealthSphere Frontend .cursorrules
+
+## Project Structure
+- Maintain the current directory structure:
+  - `src/`: Source code
+    - `app/`: Next.js App Router pages and layouts
+    - `components/`: Reusable UI components
+    - `lib/`: Utility libraries and client configurations
+    - `hooks/`: Custom React hooks
+    - `context/`: React Context providers
+    - `api/`: API client functions
+    - `utils/`: Utility functions
+    - `styles/`: Global styles and CSS modules
+
+## Coding Guidelines
+- Use TypeScript for all components and functions
+- Follow the ESLint configuration defined in eslint.config.mjs
+- Use functional components with hooks instead of class components
+- Use named exports instead of default exports where appropriate
+- Organize imports alphabetically
+- Use camelCase for variables and function names
+- Use PascalCase for component names and types/interfaces
+
+## Component Architecture
+- Keep components small and focused on a single responsibility
+- Place reusable components in `src/components/`
+- Organize components by feature or domain when possible
+- Use composition over inheritance
+- Implement Tailwind CSS for styling
+
+## State Management
+- Use React Context for global state when appropriate
+- Keep context providers in `src/context/`
+- Use custom hooks in `src/hooks/` to encapsulate complex logic
+- Prefer local component state for component-specific state
+
+## Data Fetching
+- Keep API client functions in `src/api/`
+- Use React Query for data fetching and caching when appropriate
+- Handle loading and error states explicitly for all data fetching
+
+## Routing
+- Follow Next.js App Router conventions
+- Page components should be lightweight and focused on layout
+- Keep business logic in custom hooks and services
+
+## Accessibility
+- Ensure all components meet WCAG 2.1 AA standards
+- Use semantic HTML elements appropriately
+- Include proper aria attributes where necessary
+- Ensure proper keyboard navigation 

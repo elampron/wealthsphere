@@ -3,8 +3,8 @@
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { insuranceApi, InsurancePolicy, InsuranceTypeEnum } from "@/lib/api/insurance";
-import { familyApi, FamilyMember } from "@/lib/api/family";
+import { insuranceApi, InsurancePolicy, InsuranceTypeEnum } from "@/api/insurance";
+import { familyApi, FamilyMember } from "@/api/family";
 import { useToast } from "@/components/ui/use-toast";
 import { Skeleton } from "@/components/ui/skeleton";
 import { PlusCircle, Pencil, Trash2, Filter } from "lucide-react";
@@ -24,7 +24,7 @@ import {
   SelectTrigger, 
   SelectValue 
 } from "@/components/ui/select";
-import { InsurancePolicyForm } from "@/components/forms/InsurancePolicyForm";
+import { InsurancePolicyForm } from "@/components/feature/forms/InsurancePolicyForm";
 
 export default function InsurancePage() {
   const [insurancePolicies, setInsurancePolicies] = useState<InsurancePolicy[]>([]);

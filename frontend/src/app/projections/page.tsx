@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { projectionsApi, ProjectionParameters, CashFlowProjection, WithdrawalStrategyResult } from "@/lib/api/projections";
+import { projectionsApi, ProjectionParameters, CashFlowProjection, WithdrawalStrategyResult } from "@/api/projections";
 import { useToast } from "@/components/ui/use-toast";
 import { Skeleton } from "@/components/ui/skeleton";
 import { 

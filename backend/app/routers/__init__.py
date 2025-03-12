@@ -9,4 +9,5 @@ from app.routers.assets import router as assets
 from app.routers.income import router as income
 from app.routers.expenses import router as expenses
 from app.routers.insurance import router as insurance
-from app.routers.projections import router as projections 
+from app.routers.projections import router as projections
+from app.routers.scenarios import router as scenarios 

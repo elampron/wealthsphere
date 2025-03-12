@@ -3,8 +3,8 @@
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { incomeApi, IncomeSource, IncomeTypeEnum } from "@/lib/api/income";
-import { familyApi, FamilyMember } from "@/lib/api/family";
+import { incomeApi, IncomeSource, IncomeTypeEnum } from "@/api/income";
+import { familyApi, FamilyMember } from "@/api/family";
 import { useToast } from "@/components/ui/use-toast";
 import { Skeleton } from "@/components/ui/skeleton";
 import { PlusCircle, Pencil, Trash2, Filter } from "lucide-react";
@@ -24,7 +24,7 @@ import {
   SelectTrigger, 
   SelectValue 
 } from "@/components/ui/select";
-import { IncomeSourceForm } from "@/components/forms/IncomeSourceForm";
+import { IncomeSourceForm } from "@/components/feature/forms/IncomeSourceForm";
 
 export default function IncomePage() {
   const [incomeSources, setIncomeSources] = useState<IncomeSource[]>([]);
@@ -43,11 +43,13 @@ export default function IncomePage() {
     
     try {
       // Fetch family members first
-      const members = await familyApi.getAll();
+      const membersPromise = await familyApi.getAll();
+      const members = Array.isArray(membersPromise) ? membersPromise : [];
       setFamilyMembers(members);
       
       // Then fetch income sources, possibly filtered by family member
-      const sources = await incomeApi.getAll(filterMemberId || undefined);
+      const sourcesPromise = await incomeApi.getAll(filterMemberId || undefined);
+      const sources = Array.isArray(sourcesPromise) ? sourcesPromise : [];
       setIncomeSources(sources);
     } catch (error) {
       console.error("Failed to fetch data:", error);
@@ -183,7 +185,7 @@ export default function IncomePage() {
           <div className="flex items-center">
             <Select
               value={filterMemberId?.toString() || "all"}
-              onValueChange={(value) => setFilterMemberId(value === "all" ? null : Number(value))}
+              onValueChange={(value: string) => setFilterMemberId(value === "all" ? null : Number(value))}
             >
               <SelectTrigger className="w-[180px]">
                 <SelectValue placeholder="Filter by member" />
@@ -334,7 +336,7 @@ export default function IncomePage() {
       )}
 
       {/* Delete Confirmation Dialog */}
-      <Dialog open={!!deletingSource} onOpenChange={(open) => !open && setDeletingSource(null)}>
+      <Dialog open={!!deletingSource} onOpenChange={(open: boolean) => !open && setDeletingSource(null)}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Confirm Deletion</DialogTitle>

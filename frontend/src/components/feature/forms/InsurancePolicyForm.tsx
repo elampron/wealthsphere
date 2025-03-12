@@ -27,8 +27,8 @@ import {
   InsurancePolicyCreate, 
   InsurancePolicyUpdate, 
   InsuranceTypeEnum 
-} from "@/lib/api/insurance";
-import { familyApi, FamilyMember } from "@/lib/api/family";
+} from "@/api/insurance";
+import { familyApi, FamilyMember } from "@/api/family";
 import { useToast } from "@/components/ui/use-toast";
 
 interface InsurancePolicyFormProps {

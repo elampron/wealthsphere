@@ -7,8 +7,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/components/ui/use-toast";
-import { expenseApi } from "@/lib/api/expenses";
-import { ExpenseForm } from "@/components/forms/ExpenseForm";
+import { expenseApi } from "@/api/expenses";
+import { ExpenseForm } from "@/components/feature/forms/ExpenseForm";
 
 // Interface for API response
 interface Expense {

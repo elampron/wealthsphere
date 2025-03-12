@@ -11,6 +11,7 @@ from app.db import get_db_session
 from app.models.user import User
 from app.schemas.user import Token, TokenPayload, UserCreate, User as UserSchema
 from app.core.logging_config import get_logger
+from app.services.scenario_service import ensure_default_scenario
 
 logger = get_logger("auth")
 
@@ -85,6 +86,9 @@ def register(user_in: UserCreate, db: Session = Depends(get_db_session)) -> Any:
     db.add(db_user)
     db.commit()
     db.refresh(db_user)
+    
+    # Create default scenario for the new user
+    ensure_default_scenario(db, db_user.id)
     
     logger.info(f"User {user_in.email} registered successfully")
     return db_user

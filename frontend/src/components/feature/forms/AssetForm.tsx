@@ -26,7 +26,7 @@ import {
   AssetUpdate, 
   AssetTypeEnum,
   assetApi
-} from "@/lib/api/assets";
+} from "@/api/assets";
 import { useToast } from "@/components/ui/use-toast";
 
 interface AssetFormProps {

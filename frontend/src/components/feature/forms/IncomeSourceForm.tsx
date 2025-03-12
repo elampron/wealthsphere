@@ -26,8 +26,8 @@ import {
   IncomeSourceCreate, 
   IncomeSourceUpdate, 
   IncomeTypeEnum 
-} from "@/lib/api/income";
-import { familyApi, FamilyMember } from "@/lib/api/family";
+} from "@/api/income";
+import { familyApi, FamilyMember } from "@/api/family";
 import { useToast } from "@/components/ui/use-toast";
 
 interface IncomeSourceFormProps {

@@ -4,13 +4,13 @@ import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { familyApi, FamilyMember } from "@/src/api/family";
-import { investmentApi } from "@/src/api/investments";
-import { incomeApi } from "@/src/api/income";
-import { insuranceApi } from "@/src/api/insurance";
+import { familyApi, FamilyMember } from "@/api/family";
+import { investmentApi } from "@/api/investments";
+import { incomeApi } from "@/api/income";
+import { insuranceApi } from "@/api/insurance";
 import { useToast } from "@/components/ui/use-toast";
 import { Skeleton } from "@/components/ui/skeleton";
-import { FamilyMemberForm } from "@/components/forms/FamilyMemberForm";
+import { FamilyMemberForm } from "@/components/feature/forms/FamilyMemberForm";
 
 // Enhanced family member type with additional data
 interface EnhancedFamilyMember extends FamilyMember {

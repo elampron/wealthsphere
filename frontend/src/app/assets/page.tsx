@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { assetApi, Asset, AssetTypeEnum } from "@/lib/api/assets";
+import { assetApi, Asset, AssetTypeEnum } from "@/api/assets";
 import { useToast } from "@/components/ui/use-toast";
 import { Skeleton } from "@/components/ui/skeleton";
 import { PlusCircle, Pencil, Trash2 } from "lucide-react";
@@ -14,10 +14,9 @@ import {
   DialogDescription, 
   DialogFooter, 
   DialogHeader, 
-  DialogTitle, 
-  DialogTrigger 
+  DialogTitle 
 } from "@/components/ui/dialog";
-import { AssetForm } from "@/components/forms/AssetForm";
+import { AssetForm } from "@/components/feature/forms/AssetForm";
 
 export default function AssetsPage() {
   const [assets, setAssets] = useState<Asset[]>([]);

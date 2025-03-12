@@ -1,0 +1,41 @@
+# WealthSphere Project .cursorrules
+
+## Project Overview
+WealthSphere is a full-stack financial management application with a Python/FastAPI backend and a Next.js frontend.
+
+## Project Structure
+- Maintain the clear separation between backend and frontend code:
+  - `backend/`: Python FastAPI application
+  - `frontend/`: Next.js TypeScript application
+  - See specific `.cursorrules` in each directory for detailed guidelines
+
+## Cross-cutting Concerns
+- Maintain consistent coding style across the project
+- Follow the principle of least privilege for security
+- Document all major features and components
+- Write unit tests for new functionality
+- Ensure backward compatibility when modifying existing APIs
+
+## Environment Configuration
+- Store environment variables in `.env` files (not committed to git)
+- Use `.env.example` as a template for required variables
+- Never hard-code sensitive information in the codebase
+
+## Backend/Frontend Communication
+- Use REST API endpoints for communication between frontend and backend
+- Keep API response structures consistent
+- Document changes to API contracts
+
+## Deployment
+- Ensure Docker configurations remain up-to-date
+- Test changes with Docker before committing
+
+## Git Workflow
+- Write meaningful commit messages
+- Keep commits focused and atomic
+- Update documentation when changing functionality
+
+## Third-party Dependencies
+- Minimize introducing new dependencies
+- Document reasons for adding new dependencies
+- Prefer well-maintained libraries with good community support 

@@ -1,0 +1,40 @@
+# WealthSphere Backend .cursorrules
+
+## Project Structure
+- Maintain the current directory structure:
+  - `app/`: Core application code
+    - `core/`: Core functionality and configurations
+    - `models/`: Database models/ORM classes
+    - `schemas/`: Data validation schemas (Pydantic models)
+    - `routers/`: API route handlers
+    - `services/`: Business logic and service components
+  - `data/`: Data files and storage
+  - `main.py`: Application entry point
+
+## Coding Guidelines
+- Follow PEP 8 style guidelines
+- Use type hints for all function arguments and return values
+- Document all functions, classes, and modules with docstrings
+- Use snake_case for variables and function names
+- Use PascalCase for class names
+- Organize imports in three groups separated by a blank line:
+  1. Standard library imports
+  2. Third-party imports
+  3. Local application imports
+
+## API Design
+- Organize API endpoints under appropriate routers in `app/routers/`
+- Use RESTful principles for API design
+- Validate request data using Pydantic models defined in `app/schemas/`
+- Keep business logic in services to maintain separation of concerns
+- Centralize database models in `app/models/`
+
+## Database
+- Use SQLAlchemy ORM for database interactions
+- Define all database models in `app/models/`
+- Keep database connectivity code in `app/db.py`
+
+## Error Handling
+- Use appropriate HTTP status codes for error responses
+- Include descriptive error messages in responses
+- Log errors with appropriate severity levels 

@@ -1,42 +1,48 @@
-Scenario Module Implementation – Technical Specification
-Feature Overview:
-This feature introduces the Scenario Module in WealthSphere. The goal is to allow users to create, manage, and apply different financial scenarios when making projections. This lays the foundation for future enhancements, including the transition to the Entity Value Table for storing financial values.
+Technical Specification: Scenario Module Implementation
+
+Feature Overview:This document outlines the implementation of the Scenario Module in WealthSphere. The Scenario Module allows users to create, manage, and use different financial scenarios for projections and planning. This feature is foundational for future enhancements, including the upcoming Entity Value Table changes. However, scenario-based projections will not be implemented at this stage.
 
 Feature 1: Scenario Table & Data Structure
-Objective:
-Create a new database table to store financial scenarios. This table will serve as a reference for all scenario-related entries.
 
-Key Details:
+Objective:Create a dedicated database table to store financial scenario metadata. This table will serve as a reference for all scenario-related entries.
 
-Each scenario will have a name, description, creation date, and user ownership.
-A default scenario called “Actual” will be created in the system automatically.
-The “Actual” scenario cannot be deleted or renamed but can be referenced like any other scenario.
-Users will be able to create additional scenarios to simulate different financial projections, such as “Early Retirement” or “Market Crash”.
+Key Requirements:
+
+The system will have a new table to store scenarios, each having a unique name, description, creation timestamp, and user ownership.
+
+A default scenario named "Actual" will be pre-created in the system.
+
+The "Actual" scenario cannot be deleted or renamed, but it can be referenced like any other scenario.
+
+Users will be able to create new scenarios for alternative financial projections.
+
 Feature 2: Scenario Management UI
-Objective:
-Provide users with an interface to create, edit, and delete scenarios easily.
 
-How It Will Work:
+Objective:Enable users to create, edit, and delete scenarios via an intuitive interface.
 
-A Scenario List View will display all scenarios a user has created.
-Each scenario will show its name, description, and creation date.
-Users will have action buttons to edit, delete, and select a scenario.
-A Scenario Form will allow users to enter a scenario name and description.
-Validation will prevent users from creating duplicate scenario names.
-The system will prevent users from deleting the “Actual” scenario to ensure data integrity.
-Additional Safeguards:
+User Interface Requirements:
 
-If a user tries to delete a scenario, a confirmation prompt will appear to prevent accidental deletion.
-Feature 3: Scenario Selection & Application
-Objective:
-Enable users to apply a specific scenario when viewing financial projections.
+A Scenario List View that displays all scenarios a user has created, including their names, descriptions, and creation dates.
 
-How It Will Work:
+Action buttons for editing, deleting, and selecting a scenario.
 
-A scenario dropdown will be available in the financial projections view.
-Users will be able to switch between scenarios to compare different financial outcomes.
-The system will remember the selected scenario even after logging out and logging back in.
-Database Impact:
+A Scenario Form that allows users to enter a scenario name and description, with validation to prevent duplicate names.
 
-When the Entity Value Table is introduced, all financial values—such as investments, expenses, and assets—will reference a scenario ID.
-This means users will be able to store different values for the same entity under different scenarios.
+A restriction where users cannot delete locked scenarios, like the default "Actual" scenario.
+
+A confirmation prompt before deleting any user-created scenario.
+
+API Endpoints:
+
+There will be APIs to retrieve, create, edit, and delete scenarios.
+
+Deferred: Scenario Selection & Projections Integration
+
+Reason for Deferral:
+
+Scenario-based projections will only be implemented after the Entity Value Table is in place.
+
+No changes to the current projection system will be made at this stage.
+
+Scenarios will be captured and stored, but they will not yet be applied in financial projections.
+

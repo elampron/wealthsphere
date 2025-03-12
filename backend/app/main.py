@@ -8,7 +8,7 @@ from app.db import init_db, get_db_session
 # Import routers
 from app.routers import auth, family
 # Will uncomment these as they're implemented:
-from app.routers import investments, assets, income, expenses, insurance, projections
+from app.routers import investments, assets, income, expenses, insurance, projections, scenarios
 
 # Set up logging
 setup_logging()
@@ -64,6 +64,7 @@ app.include_router(income, prefix=settings.API_PREFIX, tags=["income"])
 app.include_router(expenses, prefix=settings.API_PREFIX, tags=["expenses"])
 app.include_router(insurance, prefix=settings.API_PREFIX, tags=["insurance"])
 app.include_router(projections, prefix=settings.API_PREFIX, tags=["projections"])
+app.include_router(scenarios, prefix=settings.API_PREFIX, tags=["scenarios"])
 
 # Add a health check endpoint
 @app.get("/api/health", tags=["Health"])
@@ -80,6 +81,7 @@ async def dev_setup(db=Depends(get_db_session)):
     if settings.DEBUG:
         from app.models.user import User
         from app.core.security import get_password_hash
+        from app.services.scenario_service import ensure_default_scenario
         
         # Check if test user exists
         test_user = db.query(User).filter(User.email == "test@example.com").first()
@@ -96,7 +98,14 @@ async def dev_setup(db=Depends(get_db_session)):
             db.add(test_user)
             db.commit()
             db.refresh(test_user)
+        
+        # Ensure the default scenario exists for this user
+        default_scenario = ensure_default_scenario(db, test_user.id)
             
-        return {"message": "Development setup completed successfully", "test_user": test_user.email}
+        return {
+            "message": "Development setup completed successfully", 
+            "test_user": test_user.email,
+            "default_scenario": default_scenario.name
+        }
     
     return {"message": "Development mode is disabled"} 

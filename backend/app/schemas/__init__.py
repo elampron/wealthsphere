@@ -60,4 +60,33 @@ from app.schemas.projections import (
     WithdrawalStrategyResult,
     ScenarioType,
     ScenarioParameters
-) 
+)
+
+from app.schemas.scenario import (
+    Scenario,
+    ScenarioCreate,
+    ScenarioUpdate
+)
+
+# Make all schemas available from app.schemas
+__all__ = [
+    # User schemas
+    "User", "UserCreate", "UserUpdate", "UserInDB",
+    # Auth schemas
+    "Token", "TokenPayload",
+    # Family schemas
+    "FamilyMember", "FamilyMemberCreate", "FamilyMemberUpdate", "FamilyMemberList",
+    # Finance schemas
+    "InvestmentAccount", "InvestmentAccountCreate", "InvestmentAccountUpdate", "InvestmentAccountList",
+    "Asset", "AssetCreate", "AssetUpdate", "AssetList",
+    "IncomeSource", "IncomeSourceCreate", "IncomeSourceUpdate", "IncomeSourceList",
+    "Expense", "ExpenseCreate", "ExpenseUpdate", "ExpenseList", "ExpenseCopyRequest",
+    # Insurance schemas
+    "InsuranceTypeEnum", "InsurancePolicy", "InsurancePolicyCreate", "InsurancePolicyUpdate", "InsurancePolicyList",
+    # Projection schemas
+    "ProjectionParameters", "NetWorthCategory", "NetWorthProjection", "AccountWithdrawal",
+    "WithdrawalStrategy", "DeathBenefit", "CashFlowProjection", "WithdrawalStrategyResult",
+    "ScenarioType", "ScenarioParameters",
+    # Scenario module schemas
+    "Scenario", "ScenarioCreate", "ScenarioUpdate",
+] 

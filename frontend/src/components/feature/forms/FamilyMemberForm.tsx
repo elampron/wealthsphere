@@ -9,7 +9,7 @@ import {
   Sheet, SheetContent, SheetDescription, 
   SheetHeader, SheetTitle, SheetFooter
 } from "@/components/ui/sheet";
-import { familyApi } from "@/lib/api/family";
+import { familyApi } from "@/api/family";
 import { useToast } from "@/components/ui/use-toast";
 
 interface FamilyMemberFormProps {
