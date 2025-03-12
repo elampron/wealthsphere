@@ -59,6 +59,8 @@ export function InsurancePolicyForm({
   onSuccess, 
   initialData 
 }: InsurancePolicyFormProps) {
+  const currentYear = new Date().getFullYear();
+  
   const [formData, setFormData] = useState({
     name: initialData?.name || '',
     policy_number: initialData?.policy_number || '',
@@ -67,21 +69,26 @@ export function InsurancePolicyForm({
     coverage_amount: initialData?.coverage_amount || 0,
     premium_amount: initialData?.premium_amount || 0,
     premium_payment_frequency: initialData?.premium_payment_frequency || 'annual',
-    start_date: initialData?.start_date || '',
-    end_date: initialData?.end_date || '',
-    is_term: initialData?.is_term ?? true,
-    is_taxable_benefit: initialData?.is_taxable_benefit ?? false,
+    start_date: initialData?.start_date ? initialData.start_date.split('T')[0] : '',
+    end_date: initialData?.end_date ? initialData.end_date.split('T')[0] : '',
+    is_term: initialData?.is_term || false,
+    is_taxable_benefit: initialData?.is_taxable_benefit || false,
     notes: initialData?.notes || '',
     family_member_id: initialData?.family_member_id || 0
   });
   const [familyMembers, setFamilyMembers] = useState<FamilyMember[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
   const { toast } = useToast();
 
   useEffect(() => {
     async function fetchFamilyMembers() {
+      if (!isOpen) return;
+      
+      setIsLoading(true);
       try {
         const members = await familyApi.getAll();
+        console.log('Fetched family members:', members);
         setFamilyMembers(members);
         
         // Set default family member if not editing and we have family members
@@ -92,17 +99,19 @@ export function InsurancePolicyForm({
           }));
         }
       } catch (error) {
-        console.error("Failed to fetch family members:", error);
+        console.error('Failed to fetch family members:', error);
         toast({
           title: "Error",
-          description: "Failed to load family members. Please refresh the page.",
-          variant: "destructive"
+          description: "Failed to load family members. Please try again.",
+          variant: "destructive",
         });
+      } finally {
+        setIsLoading(false);
       }
     }
 
     fetchFamilyMembers();
-  }, [initialData, toast]);
+  }, [initialData, isOpen, toast]);
 
   const frequencyOptions = [
     { value: 'monthly', label: 'Monthly' },
@@ -216,16 +225,17 @@ export function InsurancePolicyForm({
             <div className="grid gap-2">
               <Label htmlFor="family_member_id">Family Member</Label>
               <Select 
-                value={formData.family_member_id.toString()} 
+                defaultValue={formData.family_member_id.toString()} 
                 onValueChange={(value) => handleSelectChange('family_member_id', value)}
+                disabled={isLoading || familyMembers.length === 0}
               >
-                <SelectTrigger>
+                <SelectTrigger className="w-full">
                   <SelectValue placeholder="Select family member" />
                 </SelectTrigger>
                 <SelectContent>
-                  {familyMembers.map((member) => (
+                  {familyMembers.map(member => (
                     <SelectItem key={member.id} value={member.id.toString()}>
-                      {member.first_name} {member.last_name}
+                      {member.first_name} {member.last_name} ({member.relationship_type})
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -271,20 +281,20 @@ export function InsurancePolicyForm({
             <div className="grid gap-2">
               <Label htmlFor="insurance_type">Insurance Type</Label>
               <Select 
-                value={formData.insurance_type} 
+                defaultValue={formData.insurance_type} 
                 onValueChange={(value) => handleSelectChange('insurance_type', value)}
               >
-                <SelectTrigger>
+                <SelectTrigger className="w-full">
                   <SelectValue placeholder="Select insurance type" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value={InsuranceTypeEnum.LIFE}>Life</SelectItem>
-                  <SelectItem value={InsuranceTypeEnum.DISABILITY}>Disability</SelectItem>
-                  <SelectItem value={InsuranceTypeEnum.CRITICAL_ILLNESS}>Critical Illness</SelectItem>
-                  <SelectItem value={InsuranceTypeEnum.LONG_TERM_CARE}>Long Term Care</SelectItem>
-                  <SelectItem value={InsuranceTypeEnum.HEALTH}>Health</SelectItem>
-                  <SelectItem value={InsuranceTypeEnum.HOME}>Home</SelectItem>
-                  <SelectItem value={InsuranceTypeEnum.AUTO}>Auto</SelectItem>
+                  <SelectItem value={InsuranceTypeEnum.LIFE}>Life Insurance</SelectItem>
+                  <SelectItem value={InsuranceTypeEnum.HEALTH}>Health Insurance</SelectItem>
+                  <SelectItem value={InsuranceTypeEnum.DISABILITY}>Disability Insurance</SelectItem>
+                  <SelectItem value={InsuranceTypeEnum.CRITICAL_ILLNESS}>Critical Illness Insurance</SelectItem>
+                  <SelectItem value={InsuranceTypeEnum.LONG_TERM_CARE}>Long Term Care Insurance</SelectItem>
+                  <SelectItem value={InsuranceTypeEnum.HOME}>Home Insurance</SelectItem>
+                  <SelectItem value={InsuranceTypeEnum.AUTO}>Auto Insurance</SelectItem>
                   <SelectItem value={InsuranceTypeEnum.OTHER}>Other</SelectItem>
                 </SelectContent>
               </Select>
@@ -325,18 +335,17 @@ export function InsurancePolicyForm({
             <div className="grid gap-2">
               <Label htmlFor="premium_payment_frequency">Premium Payment Frequency</Label>
               <Select 
-                value={formData.premium_payment_frequency || 'annual'} 
+                defaultValue={formData.premium_payment_frequency || 'annual'} 
                 onValueChange={(value) => handleSelectChange('premium_payment_frequency', value)}
               >
-                <SelectTrigger>
+                <SelectTrigger className="w-full">
                   <SelectValue placeholder="Select frequency" />
                 </SelectTrigger>
                 <SelectContent>
-                  {frequencyOptions.map((option) => (
-                    <SelectItem key={option.value} value={option.value}>
-                      {option.label}
-                    </SelectItem>
-                  ))}
+                  <SelectItem value="annual">Annual</SelectItem>
+                  <SelectItem value="semi-annual">Semi-Annual</SelectItem>
+                  <SelectItem value="quarterly">Quarterly</SelectItem>
+                  <SelectItem value="monthly">Monthly</SelectItem>
                 </SelectContent>
               </Select>
             </div>

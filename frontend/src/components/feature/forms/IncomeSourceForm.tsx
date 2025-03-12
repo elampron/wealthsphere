@@ -68,6 +68,7 @@ export function IncomeSourceForm({
   const [familyMembers, setFamilyMembers] = useState<FamilyMember[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const { toast } = useToast();
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     async function fetchFamilyMembers() {
@@ -89,6 +90,8 @@ export function IncomeSourceForm({
           description: "Failed to load family members. Please refresh the page.",
           variant: "destructive"
         });
+      } finally {
+        setIsLoading(false);
       }
     }
 
@@ -188,16 +191,17 @@ export function IncomeSourceForm({
             <div className="grid gap-2">
               <Label htmlFor="family_member_id">Family Member</Label>
               <Select 
-                value={formData.family_member_id.toString()} 
+                defaultValue={formData.family_member_id.toString()} 
                 onValueChange={(value) => handleSelectChange('family_member_id', value)}
+                disabled={isLoading || familyMembers.length === 0}
               >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select family member" />
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder={isLoading ? "Loading..." : "Select family member"} />
                 </SelectTrigger>
                 <SelectContent>
-                  {familyMembers.map((member) => (
+                  {familyMembers.map(member => (
                     <SelectItem key={member.id} value={member.id.toString()}>
-                      {member.first_name} {member.last_name}
+                      {member.first_name} {member.last_name} ({member.relationship_type})
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -219,23 +223,21 @@ export function IncomeSourceForm({
             <div className="grid gap-2">
               <Label htmlFor="income_type">Income Type</Label>
               <Select 
-                value={formData.income_type} 
+                defaultValue={formData.income_type} 
                 onValueChange={(value) => handleSelectChange('income_type', value)}
               >
-                <SelectTrigger>
+                <SelectTrigger className="w-full">
                   <SelectValue placeholder="Select income type" />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value={IncomeTypeEnum.SALARY}>Salary</SelectItem>
                   <SelectItem value={IncomeTypeEnum.BUSINESS_INCOME}>Business Income</SelectItem>
+                  <SelectItem value={IncomeTypeEnum.RENTAL}>Rental Income</SelectItem>
+                  <SelectItem value={IncomeTypeEnum.DIVIDEND}>Investment Income (Dividends)</SelectItem>
+                  <SelectItem value={IncomeTypeEnum.INTEREST}>Investment Income (Interest)</SelectItem>
                   <SelectItem value={IncomeTypeEnum.PENSION}>Pension</SelectItem>
                   <SelectItem value={IncomeTypeEnum.CPP}>CPP</SelectItem>
                   <SelectItem value={IncomeTypeEnum.OAS}>OAS</SelectItem>
-                  <SelectItem value={IncomeTypeEnum.GIS}>GIS</SelectItem>
-                  <SelectItem value={IncomeTypeEnum.DIVIDEND}>Dividend</SelectItem>
-                  <SelectItem value={IncomeTypeEnum.INTEREST}>Interest</SelectItem>
-                  <SelectItem value={IncomeTypeEnum.CAPITAL_GAIN}>Capital Gain</SelectItem>
-                  <SelectItem value={IncomeTypeEnum.RENTAL}>Rental</SelectItem>
                   <SelectItem value={IncomeTypeEnum.OTHER}>Other</SelectItem>
                 </SelectContent>
               </Select>

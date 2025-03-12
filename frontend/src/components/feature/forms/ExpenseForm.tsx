@@ -243,10 +243,10 @@ export function ExpenseForm({
           <div className="space-y-2">
             <Label htmlFor="type">Expense Type</Label>
             <Select 
-              value={formData.type} 
+              defaultValue={formData.type} 
               onValueChange={(value) => handleSelectChange('type', value)}
             >
-              <SelectTrigger>
+              <SelectTrigger className="w-full">
                 <SelectValue placeholder="Select type" />
               </SelectTrigger>
               <SelectContent>
@@ -262,10 +262,10 @@ export function ExpenseForm({
           <div className="space-y-2">
             <Label htmlFor="category">Category</Label>
             <Select 
-              value={formData.category} 
+              defaultValue={formData.category} 
               onValueChange={(value) => handleSelectChange('category', value)}
             >
-              <SelectTrigger>
+              <SelectTrigger className="w-full">
                 <SelectValue placeholder="Select category" />
               </SelectTrigger>
               <SelectContent>
@@ -293,14 +293,14 @@ export function ExpenseForm({
           <div className="space-y-2">
             <Label htmlFor="family_member_id">Family Member (Optional)</Label>
             <Select 
-              value={formData.family_member_id?.toString() || "0"} 
+              defaultValue={formData.family_member_id?.toString() || "0"} 
               onValueChange={(value) => {
                 const memberId = value === "0" ? null : parseInt(value);
                 handleSelectChange('family_member_id', memberId);
               }}
               disabled={isLoading}
             >
-              <SelectTrigger>
+              <SelectTrigger className="w-full">
                 <SelectValue placeholder={isLoading ? "Loading..." : "Select family member (optional)"} />
               </SelectTrigger>
               <SelectContent>

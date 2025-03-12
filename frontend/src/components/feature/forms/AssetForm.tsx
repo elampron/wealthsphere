@@ -179,10 +179,10 @@ export function AssetForm({
             <div className="grid gap-2">
               <Label htmlFor="asset_type">Asset Type</Label>
               <Select 
-                value={formData.asset_type} 
+                defaultValue={formData.asset_type}
                 onValueChange={(value) => handleSelectChange('asset_type', value)}
               >
-                <SelectTrigger>
+                <SelectTrigger className="w-full">
                   <SelectValue placeholder="Select asset type" />
                 </SelectTrigger>
                 <SelectContent>

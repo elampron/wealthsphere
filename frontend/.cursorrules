@@ -12,6 +12,13 @@
     - `utils/`: Utility functions
     - `styles/`: Global styles and CSS modules
 
+## UI Component Library
+- Use Shadcn/UI for all UI components whenever possible
+- Install and configure components according to Shadcn/UI documentation
+- Maintain consistent styling with the Shadcn/UI design system
+- Customize Shadcn/UI components only when necessary using their recommended approach
+- Properly import and use Shadcn/UI components instead of creating custom implementations
+
 ## Coding Guidelines
 - Use TypeScript for all components and functions
 - Follow the ESLint configuration defined in eslint.config.mjs

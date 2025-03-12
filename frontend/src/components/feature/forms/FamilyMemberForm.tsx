@@ -180,10 +180,10 @@ export function FamilyMemberForm({
           <div className="space-y-2">
             <Label htmlFor="relationship_type">Relationship</Label>
             <Select 
-              value={formData.relationship_type} 
+              defaultValue={formData.relationship_type} 
               onValueChange={(value) => handleSelectChange('relationship_type', value)}
             >
-              <SelectTrigger>
+              <SelectTrigger className="w-full">
                 <SelectValue placeholder="Select relationship" />
               </SelectTrigger>
               <SelectContent>

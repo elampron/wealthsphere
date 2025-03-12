@@ -195,10 +195,10 @@ export function AccountForm({
           <div className="space-y-2">
             <Label htmlFor="account_type">Account Type</Label>
             <Select 
-              value={formData.account_type} 
+              defaultValue={formData.account_type} 
               onValueChange={(value) => handleSelectChange('account_type', value)}
             >
-              <SelectTrigger>
+              <SelectTrigger className="w-full">
                 <SelectValue placeholder="Select account type" />
               </SelectTrigger>
               <SelectContent>
@@ -244,11 +244,11 @@ export function AccountForm({
           <div className="space-y-2">
             <Label htmlFor="family_member_id">Family Member</Label>
             <Select 
-              value={formData.family_member_id.toString()} 
+              defaultValue={formData.family_member_id.toString()} 
               onValueChange={(value) => handleSelectChange('family_member_id', parseInt(value))}
               disabled={isLoading || familyMembers.length === 0}
             >
-              <SelectTrigger>
+              <SelectTrigger className="w-full">
                 <SelectValue placeholder={isLoading ? "Loading..." : "Select family member"} />
               </SelectTrigger>
               <SelectContent>
