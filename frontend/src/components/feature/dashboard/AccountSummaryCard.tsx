@@ -89,3 +89,8 @@ export function AccountSummaryCard({
     </Card>
   );
 } 
+export interface CardFooterProps extends React.HTMLAttributes<HTMLDivElement> {}
+
+export function CardFooter({ children, ...props }: CardFooterProps) {
+  return <div className="flex items-center p-6 pt-0" {...props}>{children}</div>;
+}

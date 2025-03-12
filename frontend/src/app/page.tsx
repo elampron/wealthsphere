@@ -1,7 +1,7 @@
 // Server Component for initial data fetching
 import { Suspense } from 'react';
-import { DashboardClient } from '@/components/dashboard/DashboardClient';
-import { serverInvestmentApi } from '@/src/api/server-investments';
+import { DashboardClient } from '@/components/feature/dashboard/DashboardClient';
+import { serverInvestmentApi } from '@/api/server-investments';
 
 export default async function DashboardPage() {
   try {

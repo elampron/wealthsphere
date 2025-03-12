@@ -18,8 +18,6 @@ COPY .env* tsconfig.json next.config.mjs ./
 COPY public/ ./public/
 
 # Copy source code
-COPY app/ ./app/
-COPY components/ ./components/
 COPY src/ ./src/
 
 # Explicitly create the .next directory to avoid permission issues

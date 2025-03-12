@@ -1,6 +1,76 @@
 # WealthSphere Frontend
 
-This is the frontend for WealthSphere, a personal wealth management application for Canadian users. It's built with Next.js, TypeScript, and shadcn/ui (which uses Tailwind CSS).
+This is the frontend for the WealthSphere application, built with Next.js 14.
+
+## Project Structure
+
+The project follows Next.js 14 best practices with a clean, organized structure:
+
+```
+frontend/
+├── public/                   # Static assets (images, fonts, etc.)
+├── src/                      # Main source folder
+│   ├── app/                  # App Router folder for routes and layouts
+│   │   ├── (auth)/           # Authentication routes (login, signup)
+│   │   ├── accounts/         # Accounts route
+│   │   ├── assets/           # Assets route
+│   │   ├── expenses/         # Expenses route
+│   │   ├── family/           # Family route
+│   │   ├── income/           # Income route
+│   │   ├── insurance/        # Insurance route
+│   │   ├── projections/      # Projections route
+│   │   ├── layout.tsx        # Global layout wrapper
+│   │   └── page.tsx          # Home page
+│   ├── components/           # Reusable UI components
+│   │   ├── common/           # Shared components (Header, Footer, etc.)
+│   │   ├── feature/          # Feature-specific components
+│   │   │   ├── dashboard/    # Dashboard components
+│   │   │   └── forms/        # Form components
+│   │   └── ui/               # UI components library
+│   ├── hooks/                # Custom React hooks
+│   ├── lib/                  # Library code, utilities
+│   │   ├── api/              # API-related code
+│   │   ├── context/          # React context providers
+│   │   └── utils/            # Utility functions
+│   ├── styles/               # Global styles and CSS modules
+│   └── middleware.ts         # Next.js middleware for auth protection
+├── .env                      # Environment variables
+├── .env.local                # Local environment variables
+├── next.config.mjs           # Next.js configuration
+├── tsconfig.json             # TypeScript configuration
+└── package.json              # Package manifest
+```
+
+## Getting Started
+
+1. Install dependencies:
+   ```
+   npm install
+   ```
+
+2. Run the development server:
+   ```
+   npm run dev
+   ```
+
+3. Open [http://localhost:3000](http://localhost:3000) in your browser.
+
+## Build
+
+To build the application for production:
+
+```
+npm run build
+```
+
+## Docker
+
+This project can be built and run using Docker:
+
+```
+docker build -t wealthsphere-frontend .
+docker run -p 3000:3000 wealthsphere-frontend
+```
 
 ## Features
 
@@ -18,65 +88,6 @@ This is the frontend for WealthSphere, a personal wealth management application 
 - **UI Components:** shadcn/ui
 - **State Management:** React Query (TanStack Query)
 - **HTTP Client:** Native fetch with custom wrapper
-
-## Getting Started
-
-### Prerequisites
-
-- Node.js 18+ 
-- npm or yarn
-
-### Installation
-
-1. Clone the repository
-```bash
-git clone https://github.com/yourusername/wealthsphere.git
-cd wealthsphere/frontend
-```
-
-2. Install dependencies
-```bash
-npm install
-# or
-yarn install
-```
-
-3. Set up environment variables
-```bash
-cp .env.example .env.local
-```
-Then edit `.env.local` to include your backend API URL.
-
-4. Start the development server
-```bash
-npm run dev
-# or
-yarn dev
-```
-
-5. Open [http://localhost:3000](http://localhost:3000) in your browser
-
-## Project Structure
-
-```
-frontend/
-├── app/                # Next.js app router pages
-│   ├── layout.tsx      # Root layout with providers
-│   ├── page.tsx        # Dashboard page
-│   ├── accounts/       # Account management
-│   └── family/         # Family member management
-├── components/         # React components
-│   ├── ui/             # shadcn UI components
-│   ├── forms/          # Form components
-│   ├── layout/         # Layout components (Header, Footer)
-│   └── dashboard/      # Dashboard-specific components
-├── lib/                # Utility libraries
-│   ├── api/            # API integration
-│   └── providers.tsx   # React providers (React Query)
-├── hooks/              # Custom React hooks
-├── public/             # Static assets
-└── README.md           # This file
-```
 
 ## Connecting to the Backend
 

@@ -2,7 +2,7 @@
  * Authentication module for handling user login, signup, and token management
  */
 
-import { api } from './api/api';
+import { api } from '../api/api';
 
 export type User = {
   id: string;

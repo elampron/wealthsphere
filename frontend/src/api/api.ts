@@ -42,7 +42,7 @@ function getAuthHeaders(): Record<string, string> | undefined {
   try {
     // Import dynamically to avoid circular dependency
     // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const { getAuthHeader } = require('../auth');
+    const { getAuthHeader } = require('../lib/auth');
     return getAuthHeader();
   } catch (e) {
     console.error('Failed to get auth headers', e);
@@ -66,7 +66,7 @@ async function handleResponse(response: Response) {
         // Handle token expiration or invalid token by clearing auth data
         try {
           // Dynamic import to avoid circular dependency
-          const { clearAuthData } = require('../auth');
+          const { clearAuthData } = require('../lib/auth');
           clearAuthData();
           
           // Redirect to login page with callback URL

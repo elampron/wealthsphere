@@ -1,17 +1,18 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { NetWorthCard } from "@/components/dashboard/NetWorthCard";
-import { AccountSummaryCard } from "@/components/dashboard/AccountSummaryCard";
+import { NetWorthCard } from "@/components/feature/dashboard/NetWorthCard";
+import { AccountSummaryCard } from "@/components/feature/dashboard/AccountSummaryCard";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Card, CardContent } from "@/components/ui/card"; 
+import { Card, CardContent } from "../../ui/card"; 
 import { Button } from "@/components/ui/button";
-import { investmentApi } from "@/src/api/investments";
-import { assetApi } from "@/src/api/assets";
-import { familyApi } from "@/src/api/family";
+import { investmentApi } from "@/api/investments";
+import { assetApi } from "@/api/assets";
+import { familyApi } from "@/api/family";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/components/ui/use-toast";
-import { InvestmentAccount } from "@/src/api/server-investments";
+import { useRouter } from 'next/navigation';
+import type { InvestmentAccount } from "@/api/server-investments";
 
 // Account type (transformed from API response)
 type Account = {
@@ -34,7 +35,7 @@ type DashboardClientProps = {
 
 export function DashboardClient({ initialInvestmentAccounts }: DashboardClientProps) {
   // Transform server data to client format
-  const initialAccounts = initialInvestmentAccounts.map(acc => ({
+  const initialAccounts = initialInvestmentAccounts.map((acc: any) => ({
     id: acc.id.toString(),
     name: acc.name,
     type: acc.account_type as 'RRSP' | 'TFSA' | 'Non-Registered',
@@ -52,26 +53,48 @@ export function DashboardClient({ initialInvestmentAccounts }: DashboardClientPr
   const [loading, setLoading] = useState(!initialInvestmentAccounts.length);
   const [error, setError] = useState<string | null>(null);
   const { toast } = useToast();
+  const router = useRouter();
   
   // Fetch additional data from APIs
   useEffect(() => {
+    let isMounted = true;
+    
     async function fetchData() {
       // Start loading if we don't have accounts from server
       if (!initialInvestmentAccounts.length) {
-        setLoading(true);
+        if (isMounted) setLoading(true);
         
         try {
           // Attempt to fetch accounts from client-side if we don't have them
           const accountsData = await investmentApi.getAll();
-          const formattedAccounts = accountsData.map(acc => ({
-            id: acc.id.toString(),
-            name: acc.name,
-            type: acc.account_type as 'RRSP' | 'TFSA' | 'Non-Registered',
-            balance: acc.current_balance || acc.balance || 0
-          }));
-          setAccounts(formattedAccounts);
+          if (isMounted) {
+            const formattedAccounts = accountsData.map((acc: any) => ({
+              id: acc.id.toString(),
+              name: acc.name,
+              type: acc.account_type as 'RRSP' | 'TFSA' | 'Non-Registered',
+              balance: acc.balance || 0
+            }));
+            setAccounts(formattedAccounts);
+          }
         } catch (err) {
           console.error("Failed to fetch investment accounts:", err);
+          if (isMounted) {
+            // Check if it's an authentication error
+            if (err instanceof Error && 
+                (err.message.includes('Authentication failed') || 
+                 err.message.includes('session has expired'))) {
+              toast({
+                title: "Authentication Error",
+                description: "Please log in to view your dashboard.",
+                variant: "destructive"
+              });
+              
+              // Redirect to login page
+              const callbackUrl = encodeURIComponent(window.location.pathname);
+              router.push(`/login?callbackUrl=${callbackUrl}`);
+              return; // Stop further API calls
+            }
+          }
           // We'll continue and try to fetch other data
         }
       }
@@ -79,39 +102,70 @@ export function DashboardClient({ initialInvestmentAccounts }: DashboardClientPr
       try {
         // Fetch assets
         const assetsData = await assetApi.getAll();
-        const totalAssets = assetsData.reduce((sum, asset) => sum + (asset.current_value || 0), 0);
-        setAssets({ totalValue: totalAssets });
+        if (isMounted) {
+          const totalAssets = assetsData.reduce((sum, asset) => sum + (asset.current_value || 0), 0);
+          setAssets({ totalValue: totalAssets });
+        }
         
         // For now, we don't have a liabilities API, so we'll use 0
-        setLiabilities({ totalValue: 0 });
-        
-        // For now we don't have previous net worth data
-        setPreviousNetWorth(undefined);
+        if (isMounted) {
+          setLiabilities({ totalValue: 0 });
+          
+          // For now we don't have previous net worth data
+          setPreviousNetWorth(undefined);
+        }
         
         // Fetch family members
         const familyData = await familyApi.getAll();
-        const formattedFamily = familyData.map(member => ({
-          id: member.id.toString(),
-          name: `${member.first_name} ${member.last_name}`,
-          relationship: member.relationship_type
-        }));
-        setFamilyMembers(formattedFamily);
+        if (isMounted) {
+          const formattedFamily = familyData.map(member => ({
+            id: member.id.toString(),
+            name: `${member.first_name} ${member.last_name}`,
+            relationship: member.relationship_type
+          }));
+          setFamilyMembers(formattedFamily);
+        }
         
       } catch (err) {
         console.error("Failed to fetch dashboard data:", err);
-        setError("Failed to load some dashboard data. Please try again.");
-        toast({
-          title: "Warning",
-          description: "Some dashboard data could not be loaded. Please try again.",
-          variant: "destructive",
-        });
+        if (isMounted) {
+          // Check if it's an authentication error
+          if (err instanceof Error && 
+              (err.message.includes('Authentication failed') || 
+               err.message.includes('session has expired'))) {
+            toast({
+              title: "Authentication Error",
+              description: "Please log in to view your dashboard.",
+              variant: "destructive"
+            });
+            
+            // Redirect to login page
+            const callbackUrl = encodeURIComponent(window.location.pathname);
+            router.push(`/login?callbackUrl=${callbackUrl}`);
+            return; // Stop further processing
+          }
+          
+          setError("Failed to load dashboard data. Please try again later.");
+          toast({
+            title: "Error",
+            description: "Failed to load dashboard data. Please try again later.",
+            variant: "destructive"
+          });
+        }
       } finally {
-        setLoading(false);
+        if (isMounted) {
+          setLoading(false);
+        }
       }
     }
     
     fetchData();
-  }, [initialInvestmentAccounts.length, toast]);
+    
+    // Cleanup function to prevent state updates after unmount
+    return () => {
+      isMounted = false;
+    };
+  }, [initialInvestmentAccounts.length, toast, router]);
   
   // If the accounts array is empty, check if we should show a loading state or empty state
   const showNoAccountsMessage = !loading && accounts.length === 0;
