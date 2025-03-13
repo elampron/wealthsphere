@@ -12,7 +12,7 @@ import { ScenarioList } from '@/components/feature/scenarios/ScenarioList';
 
 export default function ScenariosPage() {
   const router = useRouter();
-  const { toast } = useToast();
+  const { addToast } = useToast();
   const { isLoggedIn, isLoading: authLoading } = useAuth();
   const [scenarios, setScenarios] = useState<Scenario[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -63,7 +63,7 @@ export default function ScenariosPage() {
         // Update existing scenario
         const updatedScenario = await scenariosApi.update(selectedScenario.id, { name, description });
         setScenarios(scenarios.map(s => s.id === updatedScenario.id ? updatedScenario : s));
-        toast({
+        addToast({
           title: "Success",
           description: "Scenario updated successfully",
         });
@@ -71,7 +71,7 @@ export default function ScenariosPage() {
         // Create new scenario
         const newScenario = await scenariosApi.create({ name, description });
         setScenarios([...scenarios, newScenario]);
-        toast({
+        addToast({
           title: "Success",
           description: "Scenario created successfully",
         });
@@ -79,7 +79,7 @@ export default function ScenariosPage() {
       setIsFormOpen(false);
       setSelectedScenario(null);
     } catch (err) {
-      toast({
+      addToast({
         title: "Error",
         description: err instanceof Error ? err.message : "Operation failed",
         variant: "destructive",
@@ -97,18 +97,23 @@ export default function ScenariosPage() {
       try {
         await scenariosApi.delete(scenario.id);
         setScenarios(scenarios.filter(s => s.id !== scenario.id));
-        toast({
+        addToast({
           title: "Success",
           description: "Scenario deleted successfully",
         });
       } catch (err) {
-        toast({
+        addToast({
           title: "Error",
           description: err instanceof Error ? err.message : "Failed to delete scenario",
           variant: "destructive",
         });
       }
     }
+  };
+
+  const handleFormCancel = () => {
+    setIsFormOpen(false);
+    setSelectedScenario(null);
   };
 
   if (authLoading) {
@@ -153,20 +158,19 @@ export default function ScenariosPage() {
       <Dialog open={isFormOpen} onOpenChange={setIsFormOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>{selectedScenario ? 'Edit Scenario' : 'Add New Scenario'}</DialogTitle>
+            <DialogTitle>
+              {selectedScenario ? 'Edit Scenario' : 'Add Scenario'}
+            </DialogTitle>
             <DialogDescription>
               {selectedScenario 
-                ? 'Update the details of your scenario.' 
-                : 'Create a new financial scenario to explore different possibilities.'}
+                ? 'Update the details of this scenario.' 
+                : 'Create a new financial scenario.'}
             </DialogDescription>
           </DialogHeader>
           <ScenarioForm
-            initialData={selectedScenario || undefined}
             onSubmit={handleFormSubmit}
-            onCancel={() => {
-              setIsFormOpen(false);
-              setSelectedScenario(null);
-            }}
+            onCancel={handleFormCancel}
+            initialData={selectedScenario || undefined}
           />
         </DialogContent>
       </Dialog>

@@ -3,7 +3,7 @@
 import { createContext, useContext, useState, useEffect, ReactNode, useRef } from 'react';
 import { User, getUser, login, logout, signup, isAuthenticated, getAccessToken } from '../auth';
 import { LoginCredentials, SignupData } from '../auth';
-import { useToast } from '../../components/ui/use-toast';
+import { useToast } from '@/components/ui/use-toast';
 
 // Access token storage key
 const USER_KEY = 'wealthsphere_user';
@@ -34,7 +34,7 @@ interface AuthProviderProps {
 export function AuthProvider({ children }: AuthProviderProps) {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const { toast } = useToast();
+  const { addToast } = useToast();
   const isMounted = useRef(true);
 
   useEffect(() => {
@@ -49,9 +49,13 @@ export function AuthProvider({ children }: AuthProviderProps) {
           setUser(storedUser);
         }
       } catch (error) {
-        console.error("Error loading user data:", error);
-        // Clear any potentially corrupted data
-        localStorage.removeItem(USER_KEY);
+        if (isMounted.current) {
+          addToast({
+            title: "Error",
+            description: "Failed to load user data",
+            variant: "destructive",
+          });
+        }
       } finally {
         if (isMounted.current) {
           setIsLoading(false);
@@ -60,89 +64,90 @@ export function AuthProvider({ children }: AuthProviderProps) {
     };
 
     initAuth();
-    
-    // Cleanup function to prevent state updates after unmount
+
+    // Cleanup function
     return () => {
       isMounted.current = false;
     };
-  }, []);
+  }, [addToast]);
 
-  // Login handler
   const handleLogin = async (credentials: LoginCredentials): Promise<boolean> => {
-    if (isMounted.current) setIsLoading(true);
     try {
-      const response = await login(credentials);
-      if (isMounted.current) {
-        setUser(response.user);
-        toast({
-          title: "Login successful",
-          description: `Welcome back, ${response.user.first_name}!`,
-        });
+      const success = await login(credentials);
+      if (success) {
+        const user = getUser();
+        if (user) {
+          setUser(user);
+          addToast({
+            title: "Success",
+            description: "Logged in successfully",
+          });
+          return true;
+        }
       }
-      return true;
-    } catch (error) {
-      console.error("Login error:", error);
-      if (isMounted.current) {
-        toast({
-          title: "Login failed",
-          description: error instanceof Error ? error.message : "Please check your credentials and try again.",
-          variant: "destructive",
-        });
-      }
+      addToast({
+        title: "Error",
+        description: "Invalid credentials",
+        variant: "destructive",
+      });
       return false;
-    } finally {
-      if (isMounted.current) setIsLoading(false);
+    } catch (error) {
+      addToast({
+        title: "Error",
+        description: "Failed to log in",
+        variant: "destructive",
+      });
+      return false;
     }
   };
 
-  // Signup handler
   const handleSignup = async (data: SignupData): Promise<boolean> => {
-    if (isMounted.current) setIsLoading(true);
     try {
-      const response = await signup(data);
-      if (isMounted.current) {
-        setUser(response.user);
-        toast({
-          title: "Account created",
-          description: `Welcome to WealthSphere, ${response.user.first_name}!`,
+      const success = await signup(data);
+      if (success) {
+        addToast({
+          title: "Success",
+          description: "Account created successfully",
         });
+        return true;
       }
-      return true;
-    } catch (error) {
-      console.error("Signup error:", error);
-      if (isMounted.current) {
-        toast({
-          title: "Sign up failed",
-          description: error instanceof Error ? error.message : "Please check your information and try again.",
-          variant: "destructive",
-        });
-      }
+      addToast({
+        title: "Error",
+        description: "Failed to create account",
+        variant: "destructive",
+      });
       return false;
-    } finally {
-      if (isMounted.current) setIsLoading(false);
+    } catch (error) {
+      addToast({
+        title: "Error",
+        description: "Failed to create account",
+        variant: "destructive",
+      });
+      return false;
     }
   };
 
-  // Logout handler
   const handleLogout = () => {
     logout();
-    if (isMounted.current) {
-      setUser(null);
-      toast({
-        title: "Logged out",
-        description: "You have been successfully logged out.",
-      });
-    }
+    setUser(null);
+    addToast({
+      title: "Success",
+      description: "Logged out successfully",
+    });
   };
 
   const value = {
     user,
     isLoading,
-    isLoggedIn: !!getAccessToken(),
+    isLoggedIn: isAuthenticated(),
     login: handleLogin,
     signup: handleSignup,
     logout: handleLogout,
   };
 
-  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+  return (
+    <AuthContext.Provider value={value}>
+      {children}
+    </AuthContext.Provider>
+  );
 } 

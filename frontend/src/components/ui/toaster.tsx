@@ -10,13 +10,26 @@ export interface ToastProps {
 }
 
 export function Toaster() {
-  const { toasts } = useToast();
+  const { toasts, removeToast } = useToast();
   const [mounted, setMounted] = useState(false);
 
   // Hydration fix
   useEffect(() => {
     setMounted(true);
   }, []);
+
+  // Auto-dismiss toasts after 3 seconds
+  useEffect(() => {
+    const timers = toasts.map(toast => {
+      return setTimeout(() => {
+        removeToast(toast.id);
+      }, 3000);
+    });
+
+    return () => {
+      timers.forEach(timer => clearTimeout(timer));
+    };
+  }, [toasts, removeToast]);
 
   if (!mounted) return null;
 

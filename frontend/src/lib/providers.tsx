@@ -3,8 +3,8 @@
 import { ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AuthProvider } from './context/AuthContext';
-import { Toaster } from '../components/ui/toaster';
-import { ToastProvider } from '../components/ui/use-toast';
+import { Toaster } from '@/components/ui/toaster';
+import { ToastProvider } from '@/components/ui/use-toast';
 
 // Create a client
 const queryClient = new QueryClient({
@@ -27,12 +27,12 @@ interface ProvidersProps {
 export function Providers({ children }: ProvidersProps) {
   return (
     <QueryClientProvider client={queryClient}>
-      <AuthProvider>
-        <ToastProvider>
+      <ToastProvider>
+        <AuthProvider>
           {children}
           <Toaster />
-        </ToastProvider>
-      </AuthProvider>
+        </AuthProvider>
+      </ToastProvider>
     </QueryClientProvider>
   );
 } 
