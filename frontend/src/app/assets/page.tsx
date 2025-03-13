@@ -3,7 +3,8 @@
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { assetApi, Asset, AssetTypeEnum } from "@/api/assets";
+import { assetsApi } from "@/api/assets";
+import { Asset, AssetType } from "@/types/finance";
 import { useToast } from "@/components/ui/use-toast";
 import { Skeleton } from "@/components/ui/skeleton";
 import { PlusCircle, Pencil, Trash2 } from "lucide-react";
@@ -17,73 +18,78 @@ import {
   DialogTitle 
 } from "@/components/ui/dialog";
 import { AssetForm } from "@/components/feature/forms/AssetForm";
+import { familyApi } from "@/api/family";
+import type { FamilyMember } from "@/types/family";
+import { SelectItem } from "@/components/ui/select";
 
 export default function AssetsPage() {
   const [assets, setAssets] = useState<Asset[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [isAddFormOpen, setIsAddFormOpen] = useState(false);
-  const [editingAsset, setEditingAsset] = useState<Asset | null>(null);
-  const [deletingAsset, setDeletingAsset] = useState<Asset | null>(null);
-  const { toast } = useToast();
+  const [isLoading, setIsLoading] = useState(true);
+  const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [selectedAsset, setSelectedAsset] = useState<Asset | null>(null);
+  const [familyMembers, setFamilyMembers] = useState<FamilyMember[]>([]);
+  const { addToast } = useToast();
 
-  const fetchAssets = async () => {
-    setLoading(true);
-    setError(null);
-    
+  const fetchData = async () => {
     try {
-      const fetchedAssets = await assetApi.getAll();
-      console.log("Fetched assets:", JSON.stringify(fetchedAssets, null, 2));
-      setAssets(fetchedAssets);
+      setIsLoading(true);
+      const [assetsData, familyData] = await Promise.all([
+        assetsApi.getAssets(),
+        familyApi.getAll()
+      ]);
+      
+      // Transform the data to match the expected types
+      const transformedAssets = assetsData?.map(asset => ({
+        ...asset,
+        current_value: asset.current_value || 0,
+        asset_type: asset.asset_type as AssetType
+      })) || [];
+
+      const transformedFamilyMembers = familyData?.map(member => ({
+        ...member,
+        user_id: 1, // TODO: Get the actual user ID from context/auth
+        expected_retirement_age: member.expected_retirement_age || undefined,
+        expected_death_age: member.expected_death_age || undefined
+      })) || [];
+
+      setAssets(transformedAssets);
+      setFamilyMembers(transformedFamilyMembers as FamilyMember[]);
     } catch (error) {
-      console.error("Failed to fetch assets:", error);
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      setError(`Failed to load assets: ${errorMessage}`);
-      toast({
+      console.error('Error fetching data:', error);
+      addToast({
         title: "Error",
-        description: `Failed to load assets: ${errorMessage}`,
-        variant: "destructive"
+        description: "Failed to load data",
+        variant: "destructive",
       });
     } finally {
-      setLoading(false);
+      setIsLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchAssets();
+    fetchData();
   }, []);
 
-  const handleAddAsset = () => {
-    setIsAddFormOpen(true);
+  const handleFormSuccess = () => {
+    fetchData();
   };
 
-  const handleEditAsset = (asset: Asset) => {
-    setEditingAsset(asset);
-  };
-
-  const handleDeleteAsset = async () => {
-    if (!deletingAsset) return;
-    
+  const handleDeleteAsset = async (asset: Asset) => {
     try {
-      await assetApi.delete(deletingAsset.id);
-      toast({
-        title: "Asset Deleted",
-        description: `${deletingAsset.name} has been deleted successfully.`
+      await assetsApi.deleteAsset(asset.id);
+      addToast({
+        title: "Success",
+        description: "Asset deleted successfully",
       });
-      setDeletingAsset(null);
-      fetchAssets();
+      fetchData();
     } catch (error) {
-      console.error("Failed to delete asset:", error);
-      toast({
+      console.error('Error deleting asset:', error);
+      addToast({
         title: "Error",
-        description: "Failed to delete asset. Please try again.",
-        variant: "destructive"
+        description: "Failed to delete asset",
+        variant: "destructive",
       });
     }
-  };
-
-  const handleFormSuccess = () => {
-    fetchAssets();
   };
 
   const formatCurrency = (value: number | undefined | null) => {
@@ -97,15 +103,15 @@ export default function AssetsPage() {
 
   const getAssetTypeLabel = (type: string) => {
     switch (type) {
-      case AssetTypeEnum.PRIMARY_RESIDENCE:
+      case AssetType.PRIMARY_RESIDENCE:
         return 'Primary Residence';
-      case AssetTypeEnum.SECONDARY_PROPERTY:
+      case AssetType.SECONDARY_PROPERTY:
         return 'Secondary Property';
-      case AssetTypeEnum.BUSINESS:
+      case AssetType.BUSINESS:
         return 'Business';
-      case AssetTypeEnum.VEHICLE:
+      case AssetType.VEHICLE:
         return 'Vehicle';
-      case AssetTypeEnum.OTHER:
+      case AssetType.OTHER:
         return 'Other';
       default:
         return type;
@@ -114,13 +120,13 @@ export default function AssetsPage() {
 
   const getBadgeVariant = (type: string) => {
     switch (type) {
-      case AssetTypeEnum.PRIMARY_RESIDENCE:
+      case AssetType.PRIMARY_RESIDENCE:
         return 'default';
-      case AssetTypeEnum.SECONDARY_PROPERTY:
+      case AssetType.SECONDARY_PROPERTY:
         return 'secondary';
-      case AssetTypeEnum.BUSINESS:
+      case AssetType.BUSINESS:
         return 'outline';
-      case AssetTypeEnum.VEHICLE:
+      case AssetType.VEHICLE:
         return 'destructive';
       default:
         return 'outline';
@@ -141,184 +147,100 @@ export default function AssetsPage() {
 
   return (
     <div className="container mx-auto py-8">
-      <div className="flex justify-between items-center mb-8">
-        <div>
-          <h1 className="text-3xl font-bold">Assets</h1>
-          <p className="text-muted-foreground">
-            Manage your assets and track their values over time
-          </p>
-        </div>
-        <Button onClick={handleAddAsset} size="sm">
+      <div className="flex justify-between items-center mb-6">
+        <h1 className="text-3xl font-bold">Assets</h1>
+        <Button onClick={() => setIsDialogOpen(true)}>
           <PlusCircle className="mr-2 h-4 w-4" />
           Add Asset
         </Button>
       </div>
 
-      {loading ? (
+      {isLoading ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {[1, 2, 3].map((i) => (
-            <Card key={i} className="overflow-hidden">
-              <CardHeader className="pb-2">
-                <Skeleton className="h-5 w-1/2 mb-2" />
-                <Skeleton className="h-4 w-1/3" />
+            <Card key={i} className="w-full">
+              <CardHeader>
+                <Skeleton className="h-4 w-3/4" />
               </CardHeader>
               <CardContent>
-                <Skeleton className="h-24 w-full" />
+                <Skeleton className="h-4 w-1/2 mb-2" />
+                <Skeleton className="h-4 w-1/3" />
               </CardContent>
-              <CardFooter>
-                <Skeleton className="h-10 w-full" />
+            </Card>
+          ))}
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {assets.map((asset) => (
+            <Card key={asset.id} className="w-full">
+              <CardHeader>
+                <CardTitle className="flex justify-between items-center">
+                  {asset.name}
+                  <Badge variant="outline">{getAssetTypeLabel(asset.asset_type)}</Badge>
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-2xl font-semibold">${(asset.current_value || 0).toLocaleString()}</p>
+                {asset.purchase_value && (
+                  <p className="text-sm text-gray-500">
+                    Purchased for ${asset.purchase_value.toLocaleString()}
+                    {asset.purchase_date && ` on ${new Date(asset.purchase_date).toLocaleDateString()}`}
+                  </p>
+                )}
+              </CardContent>
+              <CardFooter className="flex justify-end space-x-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setSelectedAsset(asset)}
+                >
+                  <Pencil className="mr-2 h-4 w-4" />
+                  Edit
+                </Button>
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  onClick={() => handleDeleteAsset(asset)}
+                >
+                  <Trash2 className="mr-2 h-4 w-4" />
+                  Delete
+                </Button>
               </CardFooter>
             </Card>
           ))}
         </div>
-      ) : error ? (
-        <div className="text-center">
-          <p className="text-red-500">{error}</p>
-          <Button onClick={fetchAssets} variant="outline" className="mt-4">
-            Try Again
-          </Button>
-        </div>
-      ) : (
-        <>
-          {assets.length === 0 ? (
-            <div className="text-center py-12">
-              <h3 className="text-lg font-medium mb-2">No Assets Found</h3>
-              <p className="text-muted-foreground mb-4">
-                You haven't added any assets yet. Add your first asset to start tracking.
-              </p>
-              <Button onClick={handleAddAsset}>
-                <PlusCircle className="mr-2 h-4 w-4" />
-                Add Your First Asset
-              </Button>
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {assets.map((asset) => {
-                console.log("Rendering asset:", asset.id, asset);
-                return (
-                <Card key={asset.id} className="overflow-hidden">
-                  <CardHeader className="pb-2">
-                    <div className="flex justify-between items-start">
-                      <CardTitle className="text-xl">{asset.name}</CardTitle>
-                      <Badge variant={getBadgeVariant(asset.asset_type)}>
-                        {getAssetTypeLabel(asset.asset_type)}
-                      </Badge>
-                    </div>
-                    <CardDescription>
-                      {asset.purchase_date && (
-                        <span>Purchased on {new Date(asset.purchase_date).toLocaleDateString()}</span>
-                      )}
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="space-y-2">
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground">Current Value:</span>
-                        <span className="font-medium">{formatCurrency(asset.current_value)}</span>
-                      </div>
-                      
-                      {asset.purchase_value && (
-                        <div className="flex justify-between">
-                          <span className="text-muted-foreground">Purchase Value:</span>
-                          <span>{formatCurrency(asset.purchase_value)}</span>
-                        </div>
-                      )}
-                      
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground">Expected Annual Appreciation:</span>
-                        <span className={getAppreciationColor(asset.expected_annual_appreciation)}>
-                          {asset.expected_annual_appreciation !== undefined && 
-                           asset.expected_annual_appreciation !== null && 
-                           !isNaN(asset.expected_annual_appreciation)
-                            ? (asset.expected_annual_appreciation * 100).toFixed(1)
-                            : '0.0'}%
-                        </span>
-                      </div>
-                      
-                      {asset.notes && (
-                        <div className="pt-2 border-t">
-                          <p className="text-sm text-muted-foreground">{asset.notes}</p>
-                        </div>
-                      )}
-                    </div>
-                  </CardContent>
-                  <CardFooter className="flex justify-end space-x-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => handleEditAsset(asset)}
-                    >
-                      <Pencil className="mr-2 h-4 w-4" />
-                      Edit
-                    </Button>
-                    <Button
-                      variant="destructive"
-                      size="sm"
-                      onClick={() => setDeletingAsset(asset)}
-                    >
-                      <Trash2 className="mr-2 h-4 w-4" />
-                      Delete
-                    </Button>
-                  </CardFooter>
-                </Card>
-              );
-            })}
-            </div>
-          )}
-        </>
       )}
 
-      {/* Add/Edit Asset Form */}
-      <AssetForm
-        isOpen={isAddFormOpen}
-        onClose={() => setIsAddFormOpen(false)}
-        onSuccess={handleFormSuccess}
-      />
-
-      {editingAsset && (
-        <AssetForm
-          isOpen={!!editingAsset}
-          onClose={() => setEditingAsset(null)}
-          onSuccess={handleFormSuccess}
-          initialData={{
-            id: editingAsset.id,
-            name: editingAsset.name,
-            asset_type: editingAsset.asset_type,
-            current_value: editingAsset.current_value,
-            purchase_value: editingAsset.purchase_value || null,
-            purchase_date: editingAsset.purchase_date || null,
-            expected_annual_appreciation: editingAsset.expected_annual_appreciation,
-            is_primary_residence: editingAsset.is_primary_residence || false,
-            notes: editingAsset.notes
-          }}
-        />
-      )}
-
-      {/* Delete Confirmation Dialog */}
-      <Dialog open={!!deletingAsset} onOpenChange={(open) => !open && setDeletingAsset(null)}>
+      <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Confirm Deletion</DialogTitle>
-            <DialogDescription>
-              Are you sure you want to delete {deletingAsset?.name}? This action cannot be undone.
-            </DialogDescription>
+            <DialogTitle>Add New Asset</DialogTitle>
           </DialogHeader>
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => setDeletingAsset(null)}
-            >
-              Cancel
-            </Button>
-            <Button
-              variant="destructive"
-              onClick={handleDeleteAsset}
-            >
-              Delete
-            </Button>
-          </DialogFooter>
+          <AssetForm
+            isOpen={isDialogOpen}
+            onClose={() => setIsDialogOpen(false)}
+            onSuccess={handleFormSuccess}
+            familyMembers={familyMembers}
+          />
         </DialogContent>
       </Dialog>
+
+      {selectedAsset && (
+        <Dialog open={true} onOpenChange={() => setSelectedAsset(null)}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Edit Asset</DialogTitle>
+            </DialogHeader>
+            <AssetForm
+              isOpen={true}
+              onClose={() => setSelectedAsset(null)}
+              onSuccess={handleFormSuccess}
+              familyMembers={familyMembers}
+              initialData={selectedAsset}
+            />
+          </DialogContent>
+        </Dialog>
+      )}
     </div>
   );
 } 

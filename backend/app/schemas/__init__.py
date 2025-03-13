@@ -68,6 +68,11 @@ from app.schemas.scenario import (
     ScenarioUpdate
 )
 
+from app.schemas.entity_value import (
+    EntityValue,
+    EntityValueCreate
+)
+
 # Make all schemas available from app.schemas
 __all__ = [
     # User schemas
@@ -89,4 +94,6 @@ __all__ = [
     "ScenarioType", "ScenarioParameters",
     # Scenario module schemas
     "Scenario", "ScenarioCreate", "ScenarioUpdate",
+    # Entity value schemas
+    "EntityValue", "EntityValueCreate",
 ] 

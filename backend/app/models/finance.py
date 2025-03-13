@@ -1,9 +1,11 @@
-from sqlalchemy import Boolean, Column, Integer, String, Float, Date, ForeignKey, Enum, Text
-from sqlalchemy.orm import relationship
+from sqlalchemy import Boolean, Column, Integer, String, Float, Date, ForeignKey, Enum, Text, DateTime
+from sqlalchemy.orm import relationship, Session
 import enum
-from datetime import date
+from datetime import date, datetime
+from typing import Optional
 
 from app.db import Base
+from app.models.entity_value import EntityValue
 
 
 class AccountType(str, enum.Enum):
@@ -16,6 +18,11 @@ class AccountType(str, enum.Enum):
     LIRA = "LIRA"  # Locked-In Retirement Account
     FHSA = "FHSA"  # First Home Savings Account
     CORPORATION = "CORPORATION"  # Corporate investment account
+    CHECKING = "checking"
+    SAVINGS = "savings"
+    INVESTMENT = "investment"
+    RETIREMENT = "retirement"
+    OTHER = "other"
 
 
 class AssetType(str, enum.Enum):
@@ -25,6 +32,8 @@ class AssetType(str, enum.Enum):
     BUSINESS = "BUSINESS"
     VEHICLE = "VEHICLE"
     OTHER = "OTHER"
+    REAL_ESTATE = "real_estate"
+    COLLECTIBLE = "collectible"
 
 
 class IncomeType(str, enum.Enum):
@@ -40,6 +49,7 @@ class IncomeType(str, enum.Enum):
     CAPITAL_GAIN = "CAPITAL_GAIN"
     RENTAL = "RENTAL"
     OTHER = "OTHER"
+    INVESTMENT = "investment"
 
 
 class ExpenseType(str, enum.Enum):
@@ -55,6 +65,7 @@ class ExpenseType(str, enum.Enum):
     EDUCATION = "EDUCATION"
     SPECIAL = "SPECIAL"  # One-time special expenses
     OTHER = "OTHER"
+    DEBT = "debt"
 
 
 class InvestmentAccount(Base):
@@ -68,7 +79,6 @@ class InvestmentAccount(Base):
     name = Column(String, nullable=False)
     account_type = Column(Enum(AccountType), nullable=False)
     institution = Column(String, nullable=True)
-    current_balance = Column(Float, nullable=False, default=0.0)
     expected_return_rate = Column(Float, nullable=False, default=0.0)  # Annual return rate as decimal (e.g., 0.07 for 7%)
     is_taxable = Column(Boolean, default=False)  # For special cases
     notes = Column(Text, nullable=True)
@@ -80,6 +90,32 @@ class InvestmentAccount(Base):
     # Relationships
     user = relationship("User", back_populates="investment_accounts")
     family_member = relationship("FamilyMember", back_populates="investment_accounts")
+    
+    def get_latest_value(self, db: Session, scenario_id: int) -> Optional[float]:
+        """Get the latest value for this account in the given scenario."""
+        latest_value = db.query(EntityValue).filter(
+            EntityValue.entity_type == "INVESTMENT_ACCOUNT",
+            EntityValue.entity_id == self.id,
+            EntityValue.scenario_id == scenario_id
+        ).order_by(EntityValue.recorded_at.desc()).first()
+        return latest_value.value if latest_value else None
+
+    def set_value(self, db: Session, scenario_id: int, value: float, recorded_at: Optional[datetime] = None) -> EntityValue:
+        """Set a new value for this account in the given scenario."""
+        if recorded_at is None:
+            recorded_at = datetime.utcnow()
+        
+        entity_value = EntityValue(
+            entity_type="INVESTMENT_ACCOUNT",
+            entity_id=self.id,
+            scenario_id=scenario_id,
+            value=value,
+            recorded_at=recorded_at
+        )
+        db.add(entity_value)
+        db.commit()
+        db.refresh(entity_value)
+        return entity_value
     
     def __repr__(self):
         return f"<InvestmentAccount {self.name} ({self.account_type})>"
@@ -94,7 +130,6 @@ class Asset(Base):
     
     name = Column(String, nullable=False)
     asset_type = Column(Enum(AssetType), nullable=False)
-    current_value = Column(Float, nullable=False, default=0.0)
     purchase_value = Column(Float, nullable=True)
     purchase_date = Column(Date, nullable=True)
     expected_annual_appreciation = Column(Float, nullable=False, default=0.0)  # As decimal
@@ -103,6 +138,32 @@ class Asset(Base):
     
     # Relationships
     user = relationship("User", back_populates="assets")
+    
+    def get_latest_value(self, db: Session, scenario_id: int) -> Optional[float]:
+        """Get the latest value for this asset in the given scenario."""
+        latest_value = db.query(EntityValue).filter(
+            EntityValue.entity_type == "ASSET",
+            EntityValue.entity_id == self.id,
+            EntityValue.scenario_id == scenario_id
+        ).order_by(EntityValue.recorded_at.desc()).first()
+        return latest_value.value if latest_value else None
+
+    def set_value(self, db: Session, scenario_id: int, value: float, recorded_at: Optional[datetime] = None) -> EntityValue:
+        """Set a new value for this asset in the given scenario."""
+        if recorded_at is None:
+            recorded_at = datetime.utcnow()
+        
+        entity_value = EntityValue(
+            entity_type="ASSET",
+            entity_id=self.id,
+            scenario_id=scenario_id,
+            value=value,
+            recorded_at=recorded_at
+        )
+        db.add(entity_value)
+        db.commit()
+        db.refresh(entity_value)
+        return entity_value
     
     def __repr__(self):
         return f"<Asset {self.name} ({self.asset_type})>"

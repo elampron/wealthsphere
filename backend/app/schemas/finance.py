@@ -1,7 +1,9 @@
 from pydantic import BaseModel, Field
 from typing import Optional, List
-from datetime import date
+from datetime import date, datetime
 from enum import Enum
+
+from .base import BaseSchema
 
 # Enums for validation
 class AccountTypeEnum(str, Enum):
@@ -51,13 +53,21 @@ class ExpenseTypeEnum(str, Enum):
     OTHER = "OTHER"
 
 
+class EntityTypeEnum(str, Enum):
+    INVESTMENT_ACCOUNT = "INVESTMENT_ACCOUNT"
+    ASSET = "ASSET"
+    INCOME = "INCOME"
+    EXPENSE = "EXPENSE"
+    INSURANCE = "INSURANCE"
+    OTHER = "OTHER"
+
+
 # Investment Account Schemas
 class InvestmentAccountBase(BaseModel):
     """Base investment account schema with common attributes."""
     name: str
     account_type: AccountTypeEnum
     institution: Optional[str] = None
-    current_balance: float = Field(0.0, ge=0.0)
     expected_return_rate: float = Field(0.0, ge=-1.0, le=1.0)  # Allow for small negative returns
     is_taxable: bool = False
     notes: Optional[str] = None
@@ -65,23 +75,47 @@ class InvestmentAccountBase(BaseModel):
     expected_conversion_year: Optional[int] = None
 
 
-class InvestmentAccountCreate(InvestmentAccountBase):
+class InvestmentAccountCreate(BaseSchema):
     """Schema for creating a new investment account."""
+    name: str
+    account_type: AccountTypeEnum
+    institution: Optional[str] = None
+    expected_return_rate: float = Field(0.0, ge=0.0)
+    is_taxable: bool = False
+    contribution_room: Optional[float] = None
+    expected_conversion_year: Optional[int] = None
+    notes: Optional[str] = None
     family_member_id: int
+    initial_value: Optional[float] = Field(None, ge=0.0)
 
 
-class InvestmentAccountUpdate(BaseModel):
-    """Schema for updating investment account information."""
+class InvestmentAccountUpdate(BaseSchema):
+    """Schema for updating an investment account."""
     name: Optional[str] = None
     account_type: Optional[AccountTypeEnum] = None
     institution: Optional[str] = None
-    current_balance: Optional[float] = Field(None, ge=0.0)
-    expected_return_rate: Optional[float] = Field(None, ge=-1.0, le=1.0)
+    expected_return_rate: Optional[float] = Field(None, ge=0.0)
     is_taxable: Optional[bool] = None
-    notes: Optional[str] = None
     contribution_room: Optional[float] = None
     expected_conversion_year: Optional[int] = None
+    notes: Optional[str] = None
     family_member_id: Optional[int] = None
+
+
+class InvestmentAccountRead(BaseSchema):
+    """Schema for reading an investment account."""
+    id: int
+    name: str
+    account_type: AccountTypeEnum
+    institution: Optional[str]
+    expected_return_rate: float
+    is_taxable: bool
+    contribution_room: Optional[float]
+    expected_conversion_year: Optional[int]
+    notes: Optional[str]
+    family_member_id: int
+    user_id: int
+    current_value: Optional[float] = None  # Latest value from entity_values
 
 
 class InvestmentAccount(InvestmentAccountBase):
@@ -89,6 +123,7 @@ class InvestmentAccount(InvestmentAccountBase):
     id: int
     user_id: int
     family_member_id: int
+    current_value: Optional[float] = None  # Latest value from entity_values
 
     class Config:
         from_attributes = True
@@ -99,7 +134,6 @@ class AssetBase(BaseModel):
     """Base asset schema with common attributes."""
     name: str
     asset_type: AssetTypeEnum
-    current_value: float = Field(0.0, ge=0.0)
     purchase_value: Optional[float] = Field(None, ge=0.0)
     purchase_date: Optional[date] = None
     expected_annual_appreciation: float = Field(0.0, ge=-1.0, le=1.0)
@@ -107,27 +141,48 @@ class AssetBase(BaseModel):
     notes: Optional[str] = None
 
 
-class AssetCreate(AssetBase):
+class AssetCreate(BaseSchema):
     """Schema for creating a new asset."""
-    pass
+    name: str
+    asset_type: AssetTypeEnum
+    purchase_value: Optional[float] = None
+    purchase_date: Optional[date] = None
+    expected_annual_appreciation: float = Field(0.0, ge=0.0)
+    is_primary_residence: bool = False
+    notes: Optional[str] = None
+    initial_value: Optional[float] = Field(None, ge=0.0)
 
 
-class AssetUpdate(BaseModel):
-    """Schema for updating asset information."""
+class AssetUpdate(BaseSchema):
+    """Schema for updating an asset."""
     name: Optional[str] = None
     asset_type: Optional[AssetTypeEnum] = None
-    current_value: Optional[float] = Field(None, ge=0.0)
-    purchase_value: Optional[float] = Field(None, ge=0.0)
+    purchase_value: Optional[float] = None
     purchase_date: Optional[date] = None
-    expected_annual_appreciation: Optional[float] = Field(None, ge=-1.0, le=1.0)
+    expected_annual_appreciation: Optional[float] = Field(None, ge=0.0)
     is_primary_residence: Optional[bool] = None
     notes: Optional[str] = None
+
+
+class AssetRead(BaseSchema):
+    """Schema for reading an asset."""
+    id: int
+    name: str
+    asset_type: AssetTypeEnum
+    purchase_value: Optional[float]
+    purchase_date: Optional[date]
+    expected_annual_appreciation: float
+    is_primary_residence: bool
+    notes: Optional[str]
+    user_id: int
+    current_value: Optional[float] = None  # Latest value from entity_values
 
 
 class Asset(AssetBase):
     """Schema for asset information returned to clients."""
     id: int
     user_id: int
+    current_value: Optional[float] = None  # Latest value from entity_values
 
     class Config:
         from_attributes = True
@@ -211,6 +266,7 @@ class Expense(ExpenseBase):
     """Schema for expense information returned to clients."""
     id: int
     user_id: int
+    family_member_id: Optional[int]
 
     class Config:
         from_attributes = True
@@ -237,8 +293,8 @@ class ExpenseList(BaseModel):
     expenses: List[Expense]
 
 
-class ExpenseCopyRequest(BaseModel):
-    """Schema for copying an expense to multiple years."""
-    target_years: List[int] = Field(..., description="The years to copy the expense to")
-    adjust_amount: Optional[float] = Field(None, ge=0.0, description="Optional adjusted amount for the copied expenses")
+class ExpenseCopyRequest(BaseSchema):
+    """Schema for copying expenses from one year to another."""
+    source_year: int = Field(..., description="Year to copy expenses from")
+    target_year: int = Field(..., description="Year to copy expenses to")
     end_year: Optional[int] = Field(None, description="Optional end year for the copied expenses") 

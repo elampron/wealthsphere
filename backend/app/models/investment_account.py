@@ -1,0 +1,1 @@
+# Removing the direct current_balance column 

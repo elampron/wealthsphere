@@ -1,94 +1,67 @@
 'use client';
 
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import React from 'react';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Pencil } from 'lucide-react';
+import { formatCurrency } from '@/utils/format';
+import { InvestmentAccount, EntityValue } from '@/types/finance';
 
-type Account = {
-  id: string;
-  name: string;
-  type: 'RRSP' | 'TFSA' | 'Non-Registered';
-  balance: number;
-};
+interface AccountSummaryCardProps {
+  accounts: InvestmentAccount[];
+  accountValues: EntityValue[];
+  onEditAccount: (account: InvestmentAccount) => void;
+}
 
-type AccountSummaryCardProps = {
-  accounts: Account[];
-  title: string;
-  description?: string;
-};
-
-/**
- * Card that displays a summary of accounts by type
- */
-export function AccountSummaryCard({
+export const AccountSummaryCard: React.FC<AccountSummaryCardProps> = ({
   accounts,
-  title,
-  description,
-}: AccountSummaryCardProps) {
-  // Group accounts by type
-  const accountsByType = accounts.reduce<Record<string, { total: number; accounts: Account[] }>>(
-    (acc, account) => {
-      if (!acc[account.type]) {
-        acc[account.type] = { total: 0, accounts: [] };
-      }
-      acc[account.type].total += account.balance;
-      acc[account.type].accounts.push(account);
-      return acc;
-    },
-    {}
-  );
-
-  const formatCurrency = (value: number) => {
-    return new Intl.NumberFormat('en-CA', {
-      style: 'currency',
-      currency: 'CAD',
-      maximumFractionDigits: 0,
-    }).format(value);
+  accountValues,
+  onEditAccount,
+}) => {
+  const getAccountValue = (accountId: number) => {
+    const accountValue = accountValues.find(value => value.entity_id === accountId);
+    return accountValue?.value || 0;
   };
 
-  const totalBalance = accounts.reduce((sum, account) => sum + account.balance, 0);
+  const totalValue = accountValues.reduce((sum, value) => sum + value.value, 0);
 
   return (
     <Card>
       <CardHeader>
-        <CardTitle>{title}</CardTitle>
-        {description && <CardDescription>{description}</CardDescription>}
+        <CardTitle>Investment Accounts</CardTitle>
       </CardHeader>
       <CardContent>
         <div className="space-y-4">
-          {Object.entries(accountsByType).map(([type, { total, accounts }]) => (
-            <div key={type} className="space-y-2">
-              <div className="flex items-center justify-between">
-                <h4 className="font-medium">{type}</h4>
-                <span className="font-bold">{formatCurrency(total)}</span>
+          {accounts.map((account) => (
+            <div key={account.id} className="flex items-center justify-between p-2 rounded-lg hover:bg-accent">
+              <div>
+                <p className="font-medium">{account.name}</p>
+                <p className="text-sm text-muted-foreground">{account.account_type}</p>
               </div>
-              <div className="space-y-1">
-                {accounts.map((account) => (
-                  <div
-                    key={account.id}
-                    className="flex items-center justify-between text-sm text-muted-foreground"
-                  >
-                    <span>{account.name}</span>
-                    <span>{formatCurrency(account.balance)}</span>
-                  </div>
-                ))}
+              <div className="flex items-center gap-4">
+                <p className="font-semibold">{formatCurrency(getAccountValue(account.id))}</p>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => onEditAccount(account)}
+                >
+                  <Pencil className="h-4 w-4" />
+                </Button>
               </div>
             </div>
           ))}
-
-          <div className="mt-4 pt-4 border-t flex items-center justify-between font-bold">
-            <span>Total</span>
-            <span>{formatCurrency(totalBalance)}</span>
+          <div className="border-t pt-4 mt-4">
+            <div className="flex items-center justify-between">
+              <p className="font-semibold">Total Value</p>
+              <p className="font-bold text-lg">{formatCurrency(totalValue)}</p>
+            </div>
           </div>
         </div>
       </CardContent>
     </Card>
   );
-} 
+};
+
 export interface CardFooterProps extends React.HTMLAttributes<HTMLDivElement> {}
 
 export function CardFooter({ children, ...props }: CardFooterProps) {

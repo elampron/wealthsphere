@@ -27,7 +27,7 @@
       "@/app/*": ["./src/app/*"],
       "@/api/*": ["./src/api/*"],
       "@/context/*": ["./src/lib/context/*"],
-      "@/utils/*": ["./src/lib/utils/*"]
+      "@/utils/*": ["./src/utils/*"]
     }
   },
   "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],

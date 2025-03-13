@@ -3,12 +3,13 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import settings
 from app.core.logging_config import setup_logging
-from app.db import init_db, get_db_session
+from app.db import init_db
+from app.db.session import get_db
 
 # Import routers
-from app.routers import auth, family
+from app.routers import auth, family, investments, assets, income, expenses, insurance, projections, scenarios, entity_values
 # Will uncomment these as they're implemented:
-from app.routers import investments, assets, income, expenses, insurance, projections, scenarios
+# from app.routers import scenarios
 
 # Set up logging
 setup_logging()
@@ -65,6 +66,7 @@ app.include_router(expenses, prefix=settings.API_PREFIX, tags=["expenses"])
 app.include_router(insurance, prefix=settings.API_PREFIX, tags=["insurance"])
 app.include_router(projections, prefix=settings.API_PREFIX, tags=["projections"])
 app.include_router(scenarios, prefix=settings.API_PREFIX, tags=["scenarios"])
+app.include_router(entity_values, prefix=settings.API_PREFIX, tags=["entity_values"])
 
 # Add a health check endpoint
 @app.get("/api/health", tags=["Health"])
@@ -73,14 +75,14 @@ async def health_check():
 
 # Add a development setup endpoint to create a test user if needed
 @app.get("/api/dev-setup", tags=["Development"])
-async def dev_setup(db=Depends(get_db_session)):
+async def dev_setup(db=Depends(get_db)):
     """
     Development-only endpoint to set up test data.
     This should be disabled in production.
     """
     if settings.DEBUG:
         from app.models.user import User
-        from app.core.security import get_password_hash
+        from app.core.auth import get_password_hash
         from app.services.scenario_service import ensure_default_scenario
         
         # Check if test user exists

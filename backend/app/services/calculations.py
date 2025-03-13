@@ -1,6 +1,8 @@
 from typing import Dict, List, Optional, Tuple
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 import math
+from sqlalchemy.orm import Session
+import logging
 
 from app.models import (
     FamilyMember, 
@@ -11,7 +13,10 @@ from app.models import (
     InsurancePolicy,
     AccountType
 )
+from app.models.finance import InvestmentAccount, Asset, IncomeSource, Expense, AccountType
+from app.models.entity_value import EntityValue
 
+logger = logging.getLogger(__name__)
 
 def calculate_age(birth_date: date, target_year: int) -> int:
     """Calculate age of a person in a specific year."""
@@ -164,6 +169,86 @@ def calculate_oas_clawback(income: float, year: int = None) -> float:
     max_oas = 7900  # This would be adjusted for inflation in each year
     
     return min(clawback, max_oas)
+
+
+def calculate_oas_benefit(age: int, income: float, year: int = None) -> float:
+    """
+    Calculate Old Age Security (OAS) benefit amount.
+    OAS is a monthly payment available to seniors aged 65 and older who meet
+    Canadian legal status and residence requirements.
+    
+    Args:
+        age: The person's age in the projection year
+        income: The person's projected income for calculating clawback
+        year: The projection year (for inflation adjustments)
+    
+    Returns:
+        Annual OAS benefit amount after clawback
+    """
+    # 2023 maximum annual OAS payment (would be adjusted for inflation)
+    max_annual_oas = 7900
+    
+    # No OAS before age 65
+    if age < 65:
+        return 0
+        
+    # Calculate base amount (could be adjusted for delayed start after 65)
+    base_amount = max_annual_oas
+    
+    # Apply clawback
+    clawback = calculate_oas_clawback(income, year)
+    
+    return max(0, base_amount - clawback)
+
+
+def calculate_cpp_benefit(
+    age: int,
+    years_contributed: int = 40,  # Default to 40 years of contributions
+    average_earnings: float = 55900,  # Default to 2023 YMPE
+    start_age: int = 65,  # Default to standard retirement age
+    year: int = None
+) -> float:
+    """
+    Calculate Canada Pension Plan (CPP) retirement benefit amount.
+    This is a simplified calculation - actual CPP benefits depend on many factors
+    including contribution history and average earnings.
+    
+    Args:
+        age: The person's age in the projection year
+        years_contributed: Number of years contributed to CPP
+        average_earnings: Average earnings during contribution years
+        start_age: Age when CPP benefits started
+        year: The projection year (for inflation adjustments)
+    
+    Returns:
+        Annual CPP benefit amount
+    """
+    # 2023 maximum annual CPP retirement pension at age 65
+    max_annual_cpp = 15678.85
+    
+    # No CPP before age 60 (earliest possible start)
+    if age < 60:
+        return 0
+        
+    # Calculate base amount based on contribution years and earnings
+    # Simplified calculation - real CPP is much more complex
+    contribution_factor = min(1.0, years_contributed / 40)  # 40 years for full pension
+    earnings_factor = min(1.0, average_earnings / 55900)  # 2023 YMPE
+    base_amount = max_annual_cpp * contribution_factor * earnings_factor
+    
+    # Apply early/late start adjustment
+    if start_age < 65:
+        # Reduction of 0.6% per month before age 65 (7.2% per year)
+        months_early = (65 - start_age) * 12
+        reduction = months_early * 0.006
+        base_amount *= (1 - reduction)
+    elif start_age > 65:
+        # Increase of 0.7% per month after age 65 (8.4% per year)
+        months_late = (start_age - 65) * 12
+        increase = months_late * 0.007
+        base_amount *= (1 + increase)
+    
+    return base_amount
 
 
 def calculate_account_growth(
@@ -561,4 +646,88 @@ def calculate_death_benefit(
             if policy.insurance_type == "LIFE":
                 total_benefit += policy.coverage_amount
     
-    return total_benefit 
+    return total_benefit
+
+
+def get_account_value(db: Session, account: InvestmentAccount, scenario_id: int, at_date: Optional[datetime] = None) -> float:
+    """Get the value of an account at a specific date (or latest if date not specified)."""
+    query = db.query(EntityValue).filter(
+        EntityValue.entity_type == "INVESTMENT_ACCOUNT",
+        EntityValue.entity_id == account.id,
+        EntityValue.scenario_id == scenario_id
+    )
+    
+    if at_date:
+        query = query.filter(EntityValue.recorded_at <= at_date)
+    
+    latest_value = query.order_by(EntityValue.recorded_at.desc()).first()
+    return latest_value.value if latest_value else 0.0
+
+
+def get_asset_value(db: Session, asset: Asset, scenario_id: int, at_date: Optional[datetime] = None) -> float:
+    """Get the value of an asset at a specific date (or latest if date not specified)."""
+    query = db.query(EntityValue).filter(
+        EntityValue.entity_type == "ASSET",
+        EntityValue.entity_id == asset.id,
+        EntityValue.scenario_id == scenario_id
+    )
+    
+    if at_date:
+        query = query.filter(EntityValue.recorded_at <= at_date)
+    
+    latest_value = query.order_by(EntityValue.recorded_at.desc()).first()
+    return latest_value.value if latest_value else 0.0
+
+
+def project_account_value(
+    db: Session,
+    account: InvestmentAccount,
+    scenario_id: int,
+    years: int,
+    start_date: Optional[date] = None
+) -> float:
+    """Project the value of an account into the future."""
+    if start_date is None:
+        start_date = date.today()
+    
+    start_value = get_account_value(db, account, scenario_id)
+    logger.debug(f"Projecting account {account.name} from value {start_value}")
+    
+    # Calculate growth based on account type and expected return
+    if account.account_type == AccountType.RRSP and account.expected_conversion_year:
+        # Handle RRSP to RRIF conversion
+        years_to_conversion = account.expected_conversion_year - start_date.year
+        if years_to_conversion > 0:
+            # Pre-conversion growth
+            value = start_value * ((1 + account.expected_return_rate) ** min(years, years_to_conversion))
+            if years > years_to_conversion:
+                # Post-conversion growth (could have different assumptions for RRIF)
+                remaining_years = years - years_to_conversion
+                value = value * ((1 + account.expected_return_rate) ** remaining_years)
+        else:
+            # Already converted to RRIF
+            value = start_value * ((1 + account.expected_return_rate) ** years)
+    else:
+        # Simple compound growth for other account types
+        value = start_value * ((1 + account.expected_return_rate) ** years)
+    
+    return value
+
+
+def project_asset_value(
+    db: Session,
+    asset: Asset,
+    scenario_id: int,
+    years: int,
+    start_date: Optional[date] = None
+) -> float:
+    """Project the value of an asset into the future."""
+    if start_date is None:
+        start_date = date.today()
+    
+    start_value = get_asset_value(db, asset, scenario_id)
+    logger.debug(f"Projecting asset {asset.name} from value {start_value}")
+    
+    # Apply appreciation rate
+    projected_value = start_value * ((1 + asset.expected_annual_appreciation) ** years)
+    return projected_value 

@@ -1,9 +1,10 @@
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import EmailStr, Field
 from typing import Optional
 from datetime import date
+from .base import BaseSchema
 
 
-class UserBase(BaseModel):
+class UserBase(BaseSchema):
     """Base user schema with common attributes."""
     email: EmailStr
     first_name: Optional[str] = None
@@ -16,7 +17,7 @@ class UserCreate(UserBase):
     password: str = Field(..., min_length=8)
 
 
-class UserUpdate(BaseModel):
+class UserUpdate(BaseSchema):
     """Schema for updating user information."""
     email: Optional[EmailStr] = None
     first_name: Optional[str] = None
@@ -28,28 +29,22 @@ class UserUpdate(BaseModel):
 class UserInDB(UserBase):
     """Schema for user information stored in the database (with hashed password)."""
     id: int
-    is_active: bool
+    is_active: bool = True
     hashed_password: str
-
-    class Config:
-        from_attributes = True
 
 
 class User(UserBase):
     """Schema for user information returned to clients (no password)."""
     id: int
-    is_active: bool
-
-    class Config:
-        from_attributes = True
+    is_active: bool = True
 
 
-class Token(BaseModel):
+class Token(BaseSchema):
     """Schema for JWT authentication token."""
     access_token: str
-    token_type: str
+    token_type: str = "bearer"
 
 
-class TokenPayload(BaseModel):
+class TokenPayload(BaseSchema):
     """Schema for JWT token payload."""
     sub: Optional[int] = None 

@@ -1,4 +1,5 @@
 import { api } from './api';
+import { Asset, EntityValue } from '@/types/finance';
 
 export enum AssetTypeEnum {
   PRIMARY_RESIDENCE = "PRIMARY_RESIDENCE",
@@ -61,42 +62,50 @@ function normalizeAsset(asset: any): Asset {
   };
 }
 
-export const assetApi = {
-  /**
-   * Get all assets
-   */
-  getAll: async (): Promise<Asset[]> => {
-    const assets = await api.get<any[]>('/assets');
-    console.log("Raw assets from API:", assets);
-    return assets.map(normalizeAsset);
+interface CreateAssetData {
+  name: string;
+  asset_type: string;
+  initial_value?: number;
+  expected_return_rate: number;
+  notes?: string;
+  family_member_id: number;
+}
+
+interface UpdateAssetData {
+  name?: string;
+  asset_type?: string;
+  expected_return_rate?: number;
+  notes?: string;
+  family_member_id?: number;
+}
+
+export const assetsApi = {
+  getAssets: async (): Promise<Asset[]> => {
+    const response = await api.get<{ data: Asset[] }>('/assets');
+    return response.data;
   },
 
-  /**
-   * Get a single asset by ID
-   */
-  getById: async (id: number): Promise<Asset> => {
-    const asset = await api.get<any>(`/assets/${id}`);
-    return normalizeAsset(asset);
+  getAsset: async (id: number): Promise<Asset> => {
+    const response = await api.get<{ data: Asset }>(`/assets/${id}`);
+    return response.data;
   },
 
-  /**
-   * Create a new asset
-   */
-  create: async (data: AssetCreate): Promise<Asset> => {
-    return api.post('/assets', data);
+  createAsset: async (data: CreateAssetData): Promise<Asset> => {
+    const response = await api.post<{ data: Asset }>('/assets', data);
+    return response.data;
   },
 
-  /**
-   * Update an existing asset
-   */
-  update: async (id: number, data: AssetUpdate): Promise<Asset> => {
-    return api.put(`/assets/${id}`, data);
+  updateAsset: async (id: number, data: UpdateAssetData): Promise<Asset> => {
+    const response = await api.put<{ data: Asset }>(`/assets/${id}`, data);
+    return response.data;
   },
 
-  /**
-   * Delete an asset
-   */
-  delete: async (id: number): Promise<void> => {
-    return api.delete(`/assets/${id}`);
+  deleteAsset: async (id: number): Promise<void> => {
+    await api.delete(`/assets/${id}`);
+  },
+
+  setValue: async (id: number, value: number): Promise<EntityValue> => {
+    const response = await api.post<{ data: EntityValue }>(`/assets/${id}/value`, { value });
+    return response.data;
   }
 }; 

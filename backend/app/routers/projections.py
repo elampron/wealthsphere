@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 from typing import Dict, List, Optional
-from datetime import date
+from datetime import date, datetime
 
 from app.db import get_db_session
 from app.models import (
@@ -11,7 +11,8 @@ from app.models import (
     IncomeSource,
     Expense,
     InsurancePolicy,
-    AccountType
+    AccountType,
+    Scenario
 )
 from app.schemas import (
     NetWorthProjection,
@@ -31,7 +32,13 @@ from app.services.calculations import (
     calculate_asset_growth,
     calculate_withdrawal_strategy,
     calculate_death_benefit,
-    calculate_rrif_minimum_withdrawal
+    calculate_rrif_minimum_withdrawal,
+    get_account_value,
+    get_asset_value,
+    project_account_value,
+    project_asset_value,
+    calculate_cpp_benefit,
+    calculate_oas_benefit
 )
 
 
@@ -417,4 +424,83 @@ def project_detailed_withdrawals(
             "account_details": account_details
         }
     
-    return yearly_projections 
+    return yearly_projections
+
+
+@router.get("/net-worth")
+def get_net_worth_projection(
+    years: int,
+    scenario_id: Optional[int] = None,
+    start_date: Optional[date] = None,
+    db: Session = Depends(get_db_session),
+    current_user: User = Depends(get_current_user)
+):
+    """Project net worth over specified number of years."""
+    if start_date is None:
+        start_date = date.today()
+    
+    # Get or use default scenario
+    if scenario_id is None:
+        scenario = db.query(Scenario).filter(Scenario.name == "Actual").first()
+        if not scenario:
+            raise HTTPException(status_code=404, detail="Default scenario not found")
+        scenario_id = scenario.id
+    
+    # Get all accounts and assets
+    accounts = db.query(InvestmentAccount).filter(
+        InvestmentAccount.user_id == current_user.id
+    ).all()
+    
+    assets = db.query(Asset).filter(
+        Asset.user_id == current_user.id
+    ).all()
+    
+    # Debug logging
+    for account in accounts:
+        value = get_account_value(db, account, scenario_id)
+        print(f"Account: {account.name}, Type: {account.account_type}, Balance: ${value:,.2f}")
+    
+    for asset in assets:
+        value = get_asset_value(db, asset, scenario_id)
+        print(f"Asset: {asset.name}, Type: {asset.asset_type}, Value: ${value:,.2f}")
+    
+    # Initialize projection data structures
+    projected_accounts: Dict[int, Dict[int, float]] = {year: {} for year in range(start_date.year, start_date.year + years + 1)}
+    projected_assets: Dict[int, Dict[int, float]] = {year: {} for year in range(start_date.year, start_date.year + years + 1)}
+    
+    # Project each account
+    for account in accounts:
+        for year_offset in range(years + 1):
+            year = start_date.year + year_offset
+            projected_value = project_account_value(db, account, scenario_id, year_offset, start_date)
+            projected_accounts[year][account.id] = projected_value
+    
+    # Project each asset
+    for asset in assets:
+        for year_offset in range(years + 1):
+            year = start_date.year + year_offset
+            projected_value = project_asset_value(db, asset, scenario_id, year_offset, start_date)
+            projected_assets[year][asset.id] = projected_value
+    
+    # Calculate total net worth for each year
+    net_worth_by_year = {}
+    for year in range(start_date.year, start_date.year + years + 1):
+        total_accounts = sum(projected_accounts[year].values())
+        total_assets = sum(projected_assets[year].values())
+        net_worth_by_year[year] = {
+            "total": total_accounts + total_assets,
+            "accounts": total_accounts,
+            "assets": total_assets,
+            "details": {
+                "accounts": {
+                    account.name: projected_accounts[year].get(account.id, get_account_value(db, account, scenario_id))
+                    for account in accounts
+                },
+                "assets": {
+                    asset.name: projected_assets[year].get(asset.id, get_asset_value(db, asset, scenario_id))
+                    for asset in assets
+                }
+            }
+        }
+    
+    return net_worth_by_year 

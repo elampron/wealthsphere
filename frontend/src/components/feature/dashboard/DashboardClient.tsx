@@ -4,15 +4,15 @@ import { useState, useEffect } from 'react';
 import { NetWorthCard } from "@/components/feature/dashboard/NetWorthCard";
 import { AccountSummaryCard } from "@/components/feature/dashboard/AccountSummaryCard";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Card, CardContent } from "../../ui/card"; 
+import { Card, CardContent } from "@/components/ui/card"; 
 import { Button } from "@/components/ui/button";
-import { investmentApi } from "@/api/investments";
-import { assetApi } from "@/api/assets";
+import { investmentsApi } from "@/api/investments";
+import { assetsApi } from "@/api/assets";
 import { familyApi } from "@/api/family";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/components/ui/use-toast";
 import { useRouter } from 'next/navigation';
-import type { InvestmentAccount } from "@/api/server-investments";
+import type { InvestmentAccount, Asset, EntityValue } from "@/types/finance";
 
 // Account type (transformed from API response)
 type Account = {
@@ -29,22 +29,86 @@ type FamilyMember = {
   relationship: string;
 };
 
-type DashboardClientProps = {
+interface DashboardClientProps {
   initialInvestmentAccounts: InvestmentAccount[];
-};
+}
 
 export function DashboardClient({ initialInvestmentAccounts }: DashboardClientProps) {
-  // Transform server data to client format
-  const initialAccounts = initialInvestmentAccounts.map((acc: any) => ({
-    id: acc.id.toString(),
-    name: acc.name,
-    type: acc.account_type as 'RRSP' | 'TFSA' | 'Non-Registered',
-    balance: acc.balance || 0,
-  }));
+  const [accounts, setAccounts] = useState<InvestmentAccount[]>(initialInvestmentAccounts);
+  const [accountValues, setAccountValues] = useState<EntityValue[]>([]);
+  const [assets, setAssets] = useState<Asset[]>([]);
+  const [assetValues, setAssetValues] = useState<EntityValue[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const { addToast } = useToast();
+  const router = useRouter();
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function fetchData() {
+      setIsLoading(true);
+      try {
+        // Fetch accounts if we don't have them
+        if (accounts.length === 0) {
+          const accountsData = await investmentsApi.getAccounts();
+          if (isMounted) {
+            setAccounts(accountsData);
+            // Fetch initial values for accounts
+            const values = await Promise.all(
+              accountsData.map(async (account) => {
+                const value = await investmentsApi.setValue(account.id, account.current_value || 0);
+                return value;
+              })
+            );
+            setAccountValues(values);
+          }
+        }
+
+        // Fetch assets and their values
+        const assetsData = await assetsApi.getAssets();
+        if (isMounted) {
+          setAssets(assetsData);
+          // Fetch initial values for assets
+          const values = await Promise.all(
+            assetsData.map(async (asset) => {
+              const value = await assetsApi.setValue(asset.id, asset.current_value || 0);
+              return value;
+            })
+          );
+          setAssetValues(values);
+        }
+      } catch (error) {
+        console.error('Error fetching dashboard data:', error);
+        if (isMounted) {
+          addToast({
+            title: "Error",
+            description: "Failed to load dashboard data",
+            variant: "destructive",
+          });
+        }
+      } finally {
+        if (isMounted) {
+          setIsLoading(false);
+        }
+      }
+    }
+
+    fetchData();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [accounts.length, addToast]);
+
+  const handleEditAccount = (account: InvestmentAccount) => {
+    router.push(`/investments/accounts/${account.id}`);
+  };
+
+  const calculateTotalAssets = () => {
+    return assets.reduce((sum: number, asset: Asset) => sum + (asset.current_value || 0), 0);
+  };
 
   // State for holding the data
-  const [accounts, setAccounts] = useState<Account[]>(initialAccounts);
-  const [assets, setAssets] = useState<{ totalValue: number }>({ totalValue: 0 });
   const [liabilities, setLiabilities] = useState<{ totalValue: number }>({ totalValue: 0 });
   const [previousNetWorth, setPreviousNetWorth] = useState<number | undefined>(undefined);
   const [familyMembers, setFamilyMembers] = useState<FamilyMember[]>([]);
@@ -52,8 +116,6 @@ export function DashboardClient({ initialInvestmentAccounts }: DashboardClientPr
   // Loading and error states
   const [loading, setLoading] = useState(!initialInvestmentAccounts.length);
   const [error, setError] = useState<string | null>(null);
-  const { toast } = useToast();
-  const router = useRouter();
   
   // Fetch additional data from APIs
   useEffect(() => {
@@ -66,7 +128,7 @@ export function DashboardClient({ initialInvestmentAccounts }: DashboardClientPr
         
         try {
           // Attempt to fetch accounts from client-side if we don't have them
-          const accountsData = await investmentApi.getAll();
+          const accountsData = await investmentsApi.getAll();
           if (isMounted) {
             const formattedAccounts = accountsData.map((acc: any) => ({
               id: acc.id.toString(),
@@ -83,7 +145,7 @@ export function DashboardClient({ initialInvestmentAccounts }: DashboardClientPr
             if (err instanceof Error && 
                 (err.message.includes('Authentication failed') || 
                  err.message.includes('session has expired'))) {
-              toast({
+              addToast({
                 title: "Authentication Error",
                 description: "Please log in to view your dashboard.",
                 variant: "destructive"
@@ -101,10 +163,10 @@ export function DashboardClient({ initialInvestmentAccounts }: DashboardClientPr
       
       try {
         // Fetch assets
-        const assetsData = await assetApi.getAll();
+        const assetsData = await assetsApi.getAll();
         if (isMounted) {
           const totalAssets = assetsData.reduce((sum, asset) => sum + (asset.current_value || 0), 0);
-          setAssets({ totalValue: totalAssets });
+          setAssets(assetsData);
         }
         
         // For now, we don't have a liabilities API, so we'll use 0
@@ -133,7 +195,7 @@ export function DashboardClient({ initialInvestmentAccounts }: DashboardClientPr
           if (err instanceof Error && 
               (err.message.includes('Authentication failed') || 
                err.message.includes('session has expired'))) {
-            toast({
+            addToast({
               title: "Authentication Error",
               description: "Please log in to view your dashboard.",
               variant: "destructive"
@@ -146,7 +208,7 @@ export function DashboardClient({ initialInvestmentAccounts }: DashboardClientPr
           }
           
           setError("Failed to load dashboard data. Please try again later.");
-          toast({
+          addToast({
             title: "Error",
             description: "Failed to load dashboard data. Please try again later.",
             variant: "destructive"
@@ -165,13 +227,17 @@ export function DashboardClient({ initialInvestmentAccounts }: DashboardClientPr
     return () => {
       isMounted = false;
     };
-  }, [initialInvestmentAccounts.length, toast, router]);
+  }, [initialInvestmentAccounts.length, addToast, router]);
   
   // If the accounts array is empty, check if we should show a loading state or empty state
   const showNoAccountsMessage = !loading && accounts.length === 0;
   const showEmptyDataMessage = !loading && !error && 
     accounts.length === 0 && familyMembers.length === 0;
   
+  if (isLoading) {
+    return <Skeleton className="w-full h-[200px]" />;
+  }
+
   return (
     <div className="container py-8">
       <h1 className="text-3xl font-bold mb-8">Financial Dashboard</h1>
@@ -205,15 +271,15 @@ export function DashboardClient({ initialInvestmentAccounts }: DashboardClientPr
           <TabsContent value="overview" className="space-y-8">
             <div className="grid gap-6 md:grid-cols-2">
               <NetWorthCard 
-                totalAssets={assets.totalValue + accounts.reduce((sum, acc) => sum + acc.balance, 0)}
+                totalAssets={calculateTotalAssets() + accounts.reduce((sum, acc) => sum + acc.balance, 0)}
                 totalLiabilities={liabilities.totalValue}
                 previousNetWorth={previousNetWorth}
               />
               
               <AccountSummaryCard 
                 accounts={accounts}
-                title="Investment Accounts"
-                description="Summary of all investment account balances"
+                accountValues={accountValues}
+                onEditAccount={handleEditAccount}
               />
             </div>
             
@@ -257,7 +323,7 @@ export function DashboardClient({ initialInvestmentAccounts }: DashboardClientPr
                             variant="link" 
                             size="sm" 
                             className="text-sm" 
-                            onClick={() => window.location.href = '/accounts'}
+                            onClick={() => handleEditAccount(account)}
                           >
                             View Details
                           </Button>
