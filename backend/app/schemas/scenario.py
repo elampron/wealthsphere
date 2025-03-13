@@ -23,7 +23,7 @@ class ScenarioUpdate(BaseModel):
 class ScenarioInDB(ScenarioBase):
     """Schema for scenario information stored in the database."""
     id: int
-    created_at: datetime
+    created_at: Optional[datetime] = None
     is_default: bool
     is_locked: bool
     user_id: int

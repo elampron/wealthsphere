@@ -27,9 +27,6 @@ const isServer = typeof window === 'undefined';
 const getApiUrl = () => {
   // Use SERVER_API_URL for server-side requests, CLIENT_API_URL for client-side
   const url = isServer ? SERVER_API_URL : CLIENT_API_URL;
-  if (process.env.NODE_ENV === 'development') {
-    console.log(`[API] Using ${isServer ? 'server-side' : 'client-side'} API URL: ${url}`);
-  }
   return url;
 };
 
@@ -45,10 +42,13 @@ function getAuthHeaders(): Record<string, string> | undefined {
     const { getAuthHeader } = require('../lib/auth');
     return getAuthHeader();
   } catch (e) {
-    console.error('Failed to get auth headers', e);
+    console.error('[API] Failed to get auth headers:', e);
     return undefined;
   }
 }
+
+// Track if we're already redirecting to prevent loops
+let isRedirecting = false;
 
 /**
  * Handle response from the API
@@ -57,7 +57,7 @@ async function handleResponse(response: Response) {
   // Handle non-200 responses
   if (!response.ok) {
     // Special handling for 401 Unauthorized errors
-    if (response.status === 401) {
+    if (response.status === 401 && !isRedirecting) {
       // If we're already on a login-related page, don't trigger an infinite loop
       if (typeof window !== 'undefined' && 
          !window.location.pathname.includes('/login') && 
@@ -65,6 +65,7 @@ async function handleResponse(response: Response) {
         
         // Handle token expiration or invalid token by clearing auth data
         try {
+          isRedirecting = true;
           // Dynamic import to avoid circular dependency
           const { clearAuthData } = require('../lib/auth');
           clearAuthData();
@@ -124,20 +125,20 @@ async function fetchAPI<T>(
   // Get authentication headers
   const authHeaders = getAuthHeaders();
   
-  console.log(`API Request: ${options.method || 'GET'} ${url}`);
-  
-  const response = await fetch(url, {
-    ...options,
-    headers: {
-      'Content-Type': 'application/json',
-      ...authHeaders,
-      ...options.headers,
-    },
-  });
+  try {
+    const response = await fetch(url, {
+      ...options,
+      headers: {
+        'Content-Type': 'application/json',
+        ...authHeaders,
+        ...options.headers,
+      },
+    });
 
-  const result = await handleResponse(response);
-  console.log(`API Response from ${endpoint}:`, result);
-  return result;
+    return await handleResponse(response);
+  } catch (error) {
+    throw error;
+  }
 }
 
 /**

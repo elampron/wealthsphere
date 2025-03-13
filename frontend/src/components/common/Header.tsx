@@ -15,6 +15,7 @@ export function Header() {
             <Link href="/income">Income</Link>
             <Link href="/family">Family</Link>
             <Link href="/insurance">Insurance</Link>
+            <Link href="/scenarios">Scenarios</Link>
             <Link href="/projections">Projections</Link>
           </nav>
         </div>
