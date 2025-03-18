@@ -1,5 +1,5 @@
 import { api } from './api';
-import { InvestmentAccount, EntityValue } from '@/types/finance';
+import { InvestmentAccount as BaseInvestmentAccount, EntityValue } from '@/types/finance';
 
 export enum AccountTypeEnum {
   RRSP = "RRSP",
@@ -12,7 +12,7 @@ export enum AccountTypeEnum {
   CORPORATION = "CORPORATION"
 }
 
-export interface InvestmentAccount {
+export interface InvestmentAccountDTO {
   id: number;
   name: string;
   account_type: string;
@@ -80,23 +80,23 @@ interface UpdateAccountData {
 }
 
 export const investmentsApi = {
-  getAccounts: async (): Promise<InvestmentAccount[]> => {
-    const response = await api.get<{ data: InvestmentAccount[] }>('/investment-accounts');
+  getAccounts: async (): Promise<InvestmentAccountDTO[]> => {
+    const response = await api.get<{ data: InvestmentAccountDTO[] }>('/investment-accounts');
     return response.data;
   },
 
-  getAccount: async (id: number): Promise<InvestmentAccount> => {
-    const response = await api.get<{ data: InvestmentAccount }>(`/investment-accounts/${id}`);
+  getAccount: async (id: number): Promise<InvestmentAccountDTO> => {
+    const response = await api.get<{ data: InvestmentAccountDTO }>(`/investment-accounts/${id}`);
     return response.data;
   },
 
-  createAccount: async (data: CreateAccountData): Promise<InvestmentAccount> => {
-    const response = await api.post<{ data: InvestmentAccount }>('/investment-accounts', data);
+  createAccount: async (data: CreateAccountData): Promise<InvestmentAccountDTO> => {
+    const response = await api.post<{ data: InvestmentAccountDTO }>('/investment-accounts', data);
     return response.data;
   },
 
-  updateAccount: async (id: number, data: UpdateAccountData): Promise<InvestmentAccount> => {
-    const response = await api.put<{ data: InvestmentAccount }>(`/investment-accounts/${id}`, data);
+  updateAccount: async (id: number, data: UpdateAccountData): Promise<InvestmentAccountDTO> => {
+    const response = await api.put<{ data: InvestmentAccountDTO }>(`/investment-accounts/${id}`, data);
     return response.data;
   },
 

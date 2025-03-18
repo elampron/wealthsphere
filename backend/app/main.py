@@ -24,16 +24,21 @@ app = FastAPI(
 # Configure CORS
 origins = [
     "http://localhost",
-    "http://localhost:3000",  # React default
-    "http://localhost:8080",  # Vue default
+    "http://localhost:3000",  # Next.js default
+    "http://localhost:8000",  # FastAPI default
+    "http://127.0.0.1",
+    "http://127.0.0.1:3000",
+    "http://127.0.0.1:8000",
 ]
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
     allow_headers=["*"],
+    expose_headers=["*"],
+    max_age=3600,
 )
 
 

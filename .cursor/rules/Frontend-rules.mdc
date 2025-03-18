@@ -1,3 +1,8 @@
+---
+description: Rules for the Frontend app
+globs: frontend/*
+alwaysApply: false
+---
 # WealthSphere Frontend .cursorrules
 
 ## Project Structure

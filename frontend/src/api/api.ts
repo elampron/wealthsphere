@@ -14,7 +14,7 @@ const { serverRuntimeConfig, publicRuntimeConfig } = getConfig() || {
 // For server-side requests within Docker network
 const SERVER_API_URL = serverRuntimeConfig.apiUrl || 'http://backend:8000/api';
 // For client-side browser requests
-const CLIENT_API_URL = publicRuntimeConfig.apiUrl || 'http://localhost:8000/api';
+const CLIENT_API_URL = publicRuntimeConfig.apiUrl || 'http://backend:8000/api';
 
 /**
  * Determine if code is running on server or client

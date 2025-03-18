@@ -11,6 +11,7 @@ import { insuranceApi } from "@/api/insurance";
 import { useToast } from "@/components/ui/use-toast";
 import { Skeleton } from "@/components/ui/skeleton";
 import { FamilyMemberForm } from "@/components/feature/forms/FamilyMemberForm";
+import { serverInvestmentApi } from "@/api/server-investments";
 
 // Enhanced family member type with additional data
 interface EnhancedFamilyMember extends FamilyMember {
@@ -45,7 +46,7 @@ export default function FamilyPage() {
           
           // Fetch accounts for this family member
           try {
-            const memberAccounts = await investmentApi.getAll(member.id);
+            const memberAccounts = await serverInvestmentApi.getByFamilyMember(member.id);
             accounts = memberAccounts.map(account => ({
               id: account.id.toString(),
               type: account.account_type,

@@ -24,7 +24,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Trash2 } from "lucide-react";
-import { investmentApi } from "@/api/investments";
+import { investmentsApi } from "@/api/investments";
 import { useRouter } from "next/navigation";
 
 // Interface for client-side account format
@@ -100,7 +100,7 @@ export default function AccountsClient({ initialAccounts }: AccountsClientProps)
     if (!accountToDelete) return;
     
     try {
-      await investmentApi.delete(accountToDelete.id);
+      await investmentsApi.deleteAccount(accountToDelete.id);
       toast({
         title: "Account deleted",
         description: `${accountToDelete.name} has been deleted successfully.`,

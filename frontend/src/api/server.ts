@@ -9,18 +9,17 @@ let cookies: any;
 try {
   // This will only work in a Next.js Server Component context
   // eslint-disable-next-line @typescript-eslint/no-var-requires
-  const headers = require('next/headers');
-  cookies = headers.cookies;
+  const { cookies } = require('next/headers');
 } catch (e) {
   // This block will run during build/static analysis but not at runtime
   console.warn('next/headers module not available, server-side cookies will not work');
 }
 
-// Backend URL for server-to-server communication inside Docker
-const SERVER_API_URL = 'http://backend:8000/api';
+// Backend URL for server-to-server communication
+const SERVER_API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://backend:8000/api';
 
 // For development mode only - this should be handled properly in production
-const DEV_MODE = typeof process !== 'undefined' && process.env && process.env.NODE_ENV === 'development';
+const DEV_MODE = typeof window === 'undefined' && process.env.NODE_ENV === 'development';
 
 // For development, we'll create a token for the test user
 // This would never be done in production, it's just for development convenience
@@ -36,9 +35,17 @@ async function getDevToken(): Promise<string | null> {
   
   try {
     // First, ensure the test user exists
-    await fetch(`${SERVER_API_URL}/dev-setup`, {
-      cache: 'no-store'
+    const setupResponse = await fetch(`${SERVER_API_URL}/dev-setup`, {
+      cache: 'no-store',
+      headers: {
+        'Content-Type': 'application/json'
+      }
+    }).catch(error => {
+      console.error('[Server API] Failed to connect to backend:', error);
+      return null;
     });
+    
+    if (!setupResponse) return null;
     
     // Now login to get a token
     const response = await fetch(`${SERVER_API_URL}/auth/login`, {
@@ -51,10 +58,13 @@ async function getDevToken(): Promise<string | null> {
         password: "password123"
       }),
       cache: 'no-store'
+    }).catch(error => {
+      console.error('[Server API] Failed to login:', error);
+      return null;
     });
     
-    if (!response.ok) {
-      console.error('[Server API] Failed to get dev token', await response.text());
+    if (!response || !response.ok) {
+      console.error('[Server API] Failed to get dev token', response ? await response.text() : 'No response');
       return null;
     }
     
@@ -85,7 +95,7 @@ async function getAuthHeaders(): Promise<Record<string, string> | undefined> {
     // For production, use cookies
     if (typeof cookies === 'function') {
       try {
-        const cookieStore = cookies();
+        const cookieStore = await cookies();
         const token = cookieStore.get('wealthsphere_access_token')?.value;
         
         if (!token) {
@@ -145,36 +155,44 @@ async function fetchServerAPI<T>(
 ): Promise<T> {
   const url = `${SERVER_API_URL}${endpoint}`;
   
-  // Get authentication headers from cookies or dev token
-  const authHeaders = await getAuthHeaders();
-  
-  console.log(`[Server] API Request: ${options.method || 'GET'} ${url}`);
-  
-  const response = await fetch(url, {
-    ...options,
-    headers: {
-      'Content-Type': 'application/json',
-      ...authHeaders,
-      ...options.headers,
-    },
-    // Needed for server-side fetching in Next.js
-    cache: 'no-store'
-  });
+  try {
+    // Get authentication headers from cookies or dev token
+    const authHeaders = await getAuthHeaders();
+    
+    console.log(`[Server] API Request: ${options.method || 'GET'} ${url}`);
+    
+    const response = await fetch(url, {
+      ...options,
+      headers: {
+        'Content-Type': 'application/json',
+        ...authHeaders,
+        ...options.headers,
+      },
+      // Needed for server-side fetching in Next.js
+      cache: 'no-store'
+    }).catch(error => {
+      console.error(`[Server API] Failed to fetch ${url}:`, error);
+      throw new Error(`Failed to connect to backend: ${error.message}`);
+    });
 
-  // If we get a 401 in development mode and haven't retried yet, try again
-  // This handles the case where the token needs to be generated first
-  if (DEV_MODE && response.status === 401 && retryCount === 0) {
-    console.log('[Server] Retrying API request after 401 in development mode');
-    
-    // Clear the dev token to force a new one
-    devToken = null;
-    
-    // Wait a moment and retry
-    await new Promise(resolve => setTimeout(resolve, 500));
-    return fetchServerAPI(endpoint, options, retryCount + 1);
+    // If we get a 401 in development mode and haven't retried yet, try again
+    // This handles the case where the token needs to be generated first
+    if (DEV_MODE && response.status === 401 && retryCount === 0) {
+      console.log('[Server] Retrying API request after 401 in development mode');
+      
+      // Clear the dev token to force a new one
+      devToken = null;
+      
+      // Wait a moment and retry
+      await new Promise(resolve => setTimeout(resolve, 500));
+      return fetchServerAPI(endpoint, options, retryCount + 1);
+    }
+
+    return handleResponse(response);
+  } catch (error) {
+    console.error(`[Server API] Error in fetchServerAPI for ${url}:`, error);
+    throw error;
   }
-
-  return handleResponse(response);
 }
 
 /**
