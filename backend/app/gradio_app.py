@@ -1,0 +1,1657 @@
+import gradio as gr
+import os
+import pandas as pd
+from datetime import date, datetime
+from typing import Dict, Any, List, Optional, Tuple
+from sqlalchemy.orm import Session
+import enum
+
+from app.db import get_db_session, engine, Base, init_db
+from app.models import (
+    User,
+    FamilyMember, 
+    Asset,
+    InvestmentAccount,
+    IncomeSource,
+    Expense,
+    AssetType,
+    AccountType,
+    IncomeType,
+    ExpenseType,
+    EntityType,
+    ValueRecord,
+    Scenario,
+    RelationshipType
+)
+from app.services import value_service
+
+
+# Ensure database is set up
+init_db()
+
+# Set up a simple user for demo purposes
+def ensure_demo_user(db: Session) -> User:
+    """Create a demo user if one doesn't exist"""
+    user = db.query(User).filter(User.username == "demo").first()
+    if not user:
+        user = User(
+            username="demo",
+            email="demo@example.com",
+            hashed_password="demo",
+            is_active=True
+        )
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+    return user
+
+
+# Create default 'Actual' scenario
+def ensure_actual_scenario(db: Session) -> Scenario:
+    """Ensure the 'Actual' scenario exists"""
+    return value_service.get_actual_scenario(db)
+
+
+# Database setup function
+def setup_db():
+    db = next(get_db_session())
+    user = ensure_demo_user(db)
+    scenario = ensure_actual_scenario(db)
+    return db, user, scenario
+
+
+# Dashboard functions
+def get_entity_counts() -> Dict[str, int]:
+    """Get counts of each entity type in the database"""
+    db = next(get_db_session())
+    
+    counts = {
+        "assets": db.query(Asset).count(),
+        "investment_accounts": db.query(InvestmentAccount).count(),
+        "income_sources": db.query(IncomeSource).count(),
+        "expenses": db.query(Expense).count(),
+        "family_members": db.query(FamilyMember).count()
+    }
+    
+    return counts
+
+
+def get_asset_summary() -> pd.DataFrame:
+    """Get a summary of assets with their current values"""
+    db = next(get_db_session())
+    assets = db.query(Asset).all()
+    
+    data = []
+    for asset in assets:
+        asset_dict = value_service.get_entity_with_actual_value(
+            db=db,
+            entity_type=EntityType.ASSET,
+            entity_id=asset.id
+        )
+        if asset_dict:
+            # Handle None values for actual_value
+            actual_value = asset_dict.get('actual_value')
+            if actual_value is None:
+                actual_value = 0.0
+                
+            # Handle None values for actual_value_date
+            actual_value_date = asset_dict.get('actual_value_date')
+            if actual_value_date:
+                actual_value_date = actual_value_date.strftime("%Y-%m-%d")
+            else:
+                actual_value_date = date.today().strftime("%Y-%m-%d")
+                
+            data.append({
+                "Name": asset_dict.get("name", ""),
+                "Type": asset_dict.get("asset_type", ""),
+                "Value": actual_value,
+                "As of": actual_value_date
+            })
+    
+    return pd.DataFrame(data)
+
+
+# Asset form functions
+def create_or_update_asset(
+    name: str, 
+    asset_type: str, 
+    expected_annual_appreciation: float, 
+    is_primary_residence: bool,
+    notes: str,
+    actual_value: float,
+    actual_value_date: str,  # Receiving as string in YYYY-MM-DD format
+    asset_id: Optional[int] = None
+) -> str:
+    """Create or update an asset with its actual value"""
+    db = next(get_db_session())
+    
+    try:
+        # Convert date string to date object
+        actual_value_date_obj = datetime.strptime(actual_value_date, "%Y-%m-%d").date()
+        
+        # Convert percentage back to decimal
+        expected_annual_appreciation = expected_annual_appreciation / 100.0
+        
+        # Prepare asset data
+        asset_data = {
+            "name": name,
+            "asset_type": asset_type,
+            "expected_annual_appreciation": expected_annual_appreciation,
+            "is_primary_residence": is_primary_residence,
+            "notes": notes,
+            "user_id": 1  # Demo user
+        }
+        
+        if asset_id:
+            asset_data["id"] = asset_id
+        
+        # Create or update asset with actual value
+        asset = value_service.create_or_update_entity_with_actual_value(
+            db=db,
+            entity_data=asset_data,
+            entity_type=EntityType.ASSET,
+            actual_value=actual_value,
+            actual_value_date=actual_value_date_obj
+        )
+        
+        return f"Asset {asset.name} saved successfully with actual value {actual_value} as of {actual_value_date}"
+    except Exception as e:
+        return f"Error: {str(e)}"
+
+
+def get_asset_list() -> List[Dict[str, Any]]:
+    """Get a list of all assets with their actual values"""
+    db = next(get_db_session())
+    assets = db.query(Asset).all()
+    
+    result = []
+    for asset in assets:
+        asset_dict = value_service.get_entity_with_actual_value(
+            db=db,
+            entity_type=EntityType.ASSET,
+            entity_id=asset.id
+        )
+        result.append(asset_dict)
+    
+    return result
+
+
+def delete_asset(asset_id: int) -> str:
+    """Delete an asset by ID"""
+    db = next(get_db_session())
+    
+    try:
+        asset = db.query(Asset).filter(Asset.id == asset_id).first()
+        if not asset:
+            return f"Error: Asset with ID {asset_id} not found"
+        
+        # Delete associated value records first
+        value_records = db.query(ValueRecord).filter(
+            ValueRecord.entity_type == EntityType.ASSET,
+            ValueRecord.entity_id == asset_id
+        ).all()
+        
+        for record in value_records:
+            db.delete(record)
+        
+        # Now delete the asset
+        asset_name = asset.name
+        db.delete(asset)
+        db.commit()
+        
+        return f"Asset '{asset_name}' deleted successfully"
+    except Exception as e:
+        db.rollback()
+        return f"Error deleting asset: {str(e)}"
+
+
+def get_asset_details(asset_id: int) -> Tuple:
+    """Get details for a specific asset"""
+    db = next(get_db_session())
+    
+    asset_dict = value_service.get_entity_with_actual_value(
+        db=db,
+        entity_type=EntityType.ASSET,
+        entity_id=asset_id
+    )
+    
+    if not asset_dict:
+        return ("", "", 0.0, False, "", 0.0, date.today().strftime("%Y-%m-%d"), None)
+    
+    # Extract values for the form
+    name = asset_dict.get("name", "")
+    asset_type = asset_dict.get("asset_type", "")
+    expected_annual_appreciation = float(asset_dict.get("expected_annual_appreciation", 0.0)) * 100  # Convert to percentage
+    is_primary_residence = asset_dict.get("is_primary_residence", False)
+    notes = asset_dict.get("notes", "")
+    
+    # Handle None values for actual_value
+    actual_value = asset_dict.get("actual_value")
+    if actual_value is None:
+        actual_value = 0.0
+    else:
+        actual_value = float(actual_value)
+    
+    # Handle None values for actual_value_date
+    actual_value_date = asset_dict.get("actual_value_date")
+    if actual_value_date is None:
+        actual_value_date = date.today().strftime("%Y-%m-%d")
+    elif isinstance(actual_value_date, date):
+        actual_value_date = actual_value_date.strftime("%Y-%m-%d")
+    
+    return (name, asset_type, expected_annual_appreciation, is_primary_residence, notes, 
+            actual_value, actual_value_date, asset_id)
+
+
+def get_asset_dataframe() -> pd.DataFrame:
+    """Convert asset list to DataFrame for display"""
+    assets = get_asset_list()
+    
+    # Format the data for display
+    data = []
+    for asset in assets:
+        # Handle None values for actual_value
+        actual_value = asset.get('actual_value')
+        if actual_value is None:
+            actual_value = 0.0
+            
+        # Handle None values for actual_value_date
+        actual_value_date = asset.get('actual_value_date')
+        if actual_value_date:
+            actual_value_date = actual_value_date.strftime("%Y-%m-%d")
+        else:
+            actual_value_date = ""
+            
+        data.append({
+            "ID": asset.get("id", ""),
+            "Name": asset.get("name", ""),
+            "Type": asset.get("asset_type", ""),
+            "Annual Appreciation": f"{float(asset.get('expected_annual_appreciation', 0)) * 100:.1f}%",
+            "Primary Residence": "Yes" if asset.get("is_primary_residence", False) else "No",
+            "Current Value": f"${float(actual_value):,.2f}",
+            "As of Date": actual_value_date
+        })
+    
+    return pd.DataFrame(data)
+
+
+def get_asset_choices() -> List[str]:
+    """Get a list of asset choices for the dropdown"""
+    assets = get_asset_list()
+    return ["Create New"] + [f"{a['id']}: {a['name']}" for a in assets]
+
+
+# Dashboard tab
+def dashboard_tab():
+    with gr.Tab("Dashboard"):
+        gr.Markdown("## WealthSphere Dashboard")
+        
+        # Refresh button for dashboard
+        refresh_button = gr.Button("Refresh Dashboard")
+        
+        with gr.Row():
+            # Entity counts
+            with gr.Column(scale=1):
+                gr.Markdown("### Entity Counts")
+                entity_counts = gr.JSON(get_entity_counts())
+            
+            # Asset summary
+            with gr.Column(scale=2):
+                gr.Markdown("### Asset Summary")
+                asset_summary = gr.DataFrame(get_asset_summary())
+        
+        # Set up refresh functionality
+        refresh_button.click(
+            fn=lambda: [get_entity_counts(), get_asset_summary()],
+            inputs=[],
+            outputs=[entity_counts, asset_summary]
+        )
+
+
+# Asset tab with list and form views
+def asset_tab():
+    with gr.Tab("Assets"):
+        # Create state management for showing/hiding views
+        view_state = gr.State("list")  # Default to list view
+        selected_asset_id = gr.State(None)
+
+        # List view components
+        gr.Markdown("## Assets")
+        asset_table = gr.DataFrame(get_asset_dataframe(), visible=True)
+        
+        with gr.Row(visible=True) as list_buttons:
+            add_asset_button = gr.Button("Add New Asset", variant="primary")
+            refresh_list_button = gr.Button("Refresh List")
+            edit_asset_button = gr.Button("Edit Selected Asset")
+            delete_asset_button = gr.Button("Delete Selected Asset")
+        
+        # Selected row display - initialize with empty dict instead of None
+        selected_row_json = gr.JSON({}, label="Selected Asset", visible=True)
+
+        # Form view components (initially hidden)
+        gr.Markdown("## Asset Details")
+        
+        # Asset form inputs
+        asset_id = gr.Number(visible=False)
+        name = gr.Textbox(label="Asset Name", visible=False)
+        asset_type = gr.Dropdown(
+            label="Asset Type",
+            choices=[t.value for t in AssetType],
+            value=AssetType.PRIMARY_RESIDENCE.value,
+            visible=False
+        )
+        expected_annual_appreciation = gr.Number(label="Expected Annual Appreciation (%)", value=2.0, visible=False)
+        is_primary_residence = gr.Checkbox(label="Is Primary Residence", value=False, visible=False)
+        notes = gr.Textbox(label="Notes", lines=3, visible=False)
+        
+        # Actual value section
+        value_section_header = gr.Markdown("### Actual Value", visible=False)
+        actual_value = gr.Number(label="Current Value ($)", value=0.0, visible=False)
+        actual_value_date = gr.Textbox(
+            label="Value Date",
+            value=date.today().strftime("%Y-%m-%d"),
+            placeholder="YYYY-MM-DD",
+            visible=False
+        )
+        
+        # Form buttons
+        with gr.Row(visible=False) as form_buttons:
+            save_button = gr.Button("Save Asset", variant="primary")
+            cancel_button = gr.Button("Cancel")
+        
+        # Result message
+        result_message = gr.Textbox(label="Result", visible=True)
+        
+        # Preview
+        preview = gr.JSON(label="Asset Details Preview", visible=False)
+        
+        # Update preview when form fields change
+        def update_preview(name, asset_type, expected_annual_appreciation, is_primary_residence, 
+                          notes, actual_value, actual_value_date, asset_id):
+            return {
+                "id": asset_id,
+                "name": name,
+                "asset_type": asset_type,
+                "expected_annual_appreciation": expected_annual_appreciation,
+                "is_primary_residence": is_primary_residence,
+                "notes": notes,
+                "actual_value": actual_value,
+                "actual_value_date": actual_value_date
+            }
+        
+        for field in [name, asset_type, expected_annual_appreciation, is_primary_residence, 
+                     notes, actual_value, actual_value_date, asset_id]:
+            field.change(
+                fn=update_preview,
+                inputs=[name, asset_type, expected_annual_appreciation, is_primary_residence, 
+                       notes, actual_value, actual_value_date, asset_id],
+                outputs=preview
+            )
+        
+        # Table selection event
+        def handle_selection(evt: gr.SelectData, state: Dict):
+            row_index = evt.index[0]
+            df = get_asset_dataframe()
+            asset_id = int(df.iloc[row_index]["ID"])
+            row_data = df.iloc[row_index].to_dict()
+            return asset_id, {"value": row_data}
+        
+        asset_table.select(
+            fn=handle_selection,
+            inputs=[selected_asset_id],
+            outputs=[selected_asset_id, selected_row_json]
+        )
+        
+        # Switch to form view functions
+        def show_form_view(view="new", asset_id=None):
+            if view == "new":
+                # Clear form for new asset
+                return (
+                    "form",  # view_state
+                    None,    # selected_asset_id
+                    gr.update(visible=False),  # asset_table
+                    gr.update(visible=False),  # list_buttons
+                    gr.update(visible=False),  # selected_row_json
+                    gr.update(visible=True),   # name
+                    gr.update(visible=True),   # asset_type
+                    gr.update(visible=True),   # expected_annual_appreciation
+                    gr.update(visible=True),   # is_primary_residence
+                    gr.update(visible=True),   # notes
+                    gr.update(visible=True),   # value_section_header
+                    gr.update(visible=True),   # actual_value
+                    gr.update(visible=True),   # actual_value_date
+                    gr.update(visible=True),   # form_buttons
+                    gr.update(visible=True),   # preview
+                    "",      # name value
+                    AssetType.PRIMARY_RESIDENCE.value,  # asset_type value
+                    2.0,     # expected_annual_appreciation value
+                    False,   # is_primary_residence value
+                    "",      # notes value
+                    0.0,     # actual_value value
+                    date.today().strftime("%Y-%m-%d"),  # actual_value_date value
+                    None,    # asset_id value
+                    ""       # result_message
+                )
+            else:
+                # Load asset details for editing
+                name_val, asset_type_val, expected_annual_appreciation_val, is_primary_residence_val, notes_val, actual_value_val, actual_value_date_val, asset_id_val = get_asset_details(asset_id)
+                return (
+                    "form",  # view_state
+                    asset_id,  # selected_asset_id
+                    gr.update(visible=False),  # asset_table
+                    gr.update(visible=False),  # list_buttons
+                    gr.update(visible=False),  # selected_row_json
+                    gr.update(visible=True),   # name
+                    gr.update(visible=True),   # asset_type
+                    gr.update(visible=True),   # expected_annual_appreciation
+                    gr.update(visible=True),   # is_primary_residence
+                    gr.update(visible=True),   # notes
+                    gr.update(visible=True),   # value_section_header
+                    gr.update(visible=True),   # actual_value
+                    gr.update(visible=True),   # actual_value_date
+                    gr.update(visible=True),   # form_buttons
+                    gr.update(visible=True),   # preview
+                    name_val,     # name value
+                    asset_type_val,  # asset_type value
+                    expected_annual_appreciation_val,  # expected_annual_appreciation value
+                    is_primary_residence_val,  # is_primary_residence value
+                    notes_val,    # notes value
+                    actual_value_val,  # actual_value value
+                    actual_value_date_val,  # actual_value_date value
+                    asset_id_val,  # asset_id value
+                    ""        # result_message
+                )
+        
+        # Switch to list view function
+        def show_list_view():
+            return (
+                "list",  # view_state
+                gr.update(visible=True),   # asset_table
+                gr.update(visible=True),   # list_buttons
+                gr.update(visible=True),   # selected_row_json
+                gr.update(visible=False),  # name
+                gr.update(visible=False),  # asset_type
+                gr.update(visible=False),  # expected_annual_appreciation
+                gr.update(visible=False),  # is_primary_residence
+                gr.update(visible=False),  # notes
+                gr.update(visible=False),  # value_section_header
+                gr.update(visible=False),  # actual_value
+                gr.update(visible=False),  # actual_value_date
+                gr.update(visible=False),  # form_buttons
+                gr.update(visible=False),  # preview
+                get_asset_dataframe()      # refresh table data
+            )
+        
+        # Add new asset button
+        add_asset_button.click(
+            fn=show_form_view,
+            inputs=[],
+            outputs=[
+                view_state, 
+                selected_asset_id,
+                asset_table,
+                list_buttons,
+                selected_row_json,
+                name,
+                asset_type,
+                expected_annual_appreciation,
+                is_primary_residence,
+                notes,
+                value_section_header,
+                actual_value,
+                actual_value_date,
+                form_buttons,
+                preview,
+                name,
+                asset_type,
+                expected_annual_appreciation,
+                is_primary_residence,
+                notes,
+                actual_value,
+                actual_value_date,
+                asset_id,
+                result_message
+            ]
+        )
+        
+        # Edit selected asset button
+        def edit_selected_asset(asset_id):
+            if asset_id is None:
+                return [
+                    "list", None,
+                    gr.update(visible=True), gr.update(visible=True), gr.update(visible=True),
+                    gr.update(visible=False), gr.update(visible=False), gr.update(visible=False),
+                    gr.update(visible=False), gr.update(visible=False), gr.update(visible=False),
+                    gr.update(visible=False), gr.update(visible=False), gr.update(visible=False),
+                    gr.update(visible=False),
+                    gr.update(), gr.update(), gr.update(), gr.update(), gr.update(),
+                    gr.update(), gr.update(), gr.update(),
+                    "Please select an asset to edit"
+                ]
+            return show_form_view("edit", asset_id)
+        
+        edit_asset_button.click(
+            fn=edit_selected_asset,
+            inputs=[selected_asset_id],
+            outputs=[
+                view_state,
+                selected_asset_id,
+                asset_table,
+                list_buttons,
+                selected_row_json,
+                name,
+                asset_type,
+                expected_annual_appreciation,
+                is_primary_residence,
+                notes,
+                value_section_header,
+                actual_value,
+                actual_value_date,
+                form_buttons,
+                preview,
+                name,
+                asset_type,
+                expected_annual_appreciation,
+                is_primary_residence,
+                notes,
+                actual_value,
+                actual_value_date,
+                asset_id,
+                result_message
+            ]
+        )
+        
+        # Delete selected asset button
+        def delete_selected_asset(asset_id):
+            if asset_id is None:
+                return "Please select an asset to delete", None, get_asset_dataframe()
+            
+            # Perform the delete operation
+            result = delete_asset(asset_id)
+            
+            # Return message, clear selected ID, and update table
+            return result, None, get_asset_dataframe()
+        
+        delete_asset_button.click(
+            fn=delete_selected_asset,
+            inputs=[selected_asset_id],
+            outputs=[result_message, selected_asset_id, asset_table]
+        )
+        
+        # Refresh list button
+        refresh_list_button.click(
+            fn=get_asset_dataframe,
+            inputs=[],
+            outputs=[asset_table]
+        )
+        
+        # Cancel button
+        cancel_button.click(
+            fn=show_list_view,
+            inputs=[],
+            outputs=[
+                view_state,
+                asset_table,
+                list_buttons,
+                selected_row_json,
+                name,
+                asset_type,
+                expected_annual_appreciation,
+                is_primary_residence,
+                notes,
+                value_section_header,
+                actual_value,
+                actual_value_date,
+                form_buttons,
+                preview,
+                asset_table
+            ]
+        )
+        
+        # Save asset button
+        def save_asset_and_return(
+            name, asset_type, expected_annual_appreciation, is_primary_residence, 
+            notes, actual_value, actual_value_date, asset_id
+        ):
+            result = create_or_update_asset(
+                name, asset_type, expected_annual_appreciation, is_primary_residence,
+                notes, actual_value, actual_value_date, asset_id
+            )
+            
+            # Return to list view with updated data
+            return [
+                "list",  # view_state
+                gr.update(visible=True),   # asset_table
+                gr.update(visible=True),   # list_buttons
+                gr.update(visible=True),   # selected_row_json
+                gr.update(visible=False),  # name
+                gr.update(visible=False),  # asset_type
+                gr.update(visible=False),  # expected_annual_appreciation
+                gr.update(visible=False),  # is_primary_residence
+                gr.update(visible=False),  # notes
+                gr.update(visible=False),  # value_section_header
+                gr.update(visible=False),  # actual_value
+                gr.update(visible=False),  # actual_value_date
+                gr.update(visible=False),  # form_buttons
+                gr.update(visible=False),  # preview
+                result,                    # result_message
+                get_asset_dataframe()      # refresh table data
+            ]
+        
+        save_button.click(
+            fn=save_asset_and_return,
+            inputs=[
+                name, asset_type, expected_annual_appreciation, is_primary_residence,
+                notes, actual_value, actual_value_date, asset_id
+            ],
+            outputs=[
+                view_state,
+                asset_table,
+                list_buttons,
+                selected_row_json,
+                name,
+                asset_type,
+                expected_annual_appreciation,
+                is_primary_residence,
+                notes,
+                value_section_header,
+                actual_value,
+                actual_value_date,
+                form_buttons,
+                preview,
+                result_message,
+                asset_table
+            ]
+        )
+
+        # When the selected ID changes, update the JSON display
+        def update_selected_json(asset_id):
+            if asset_id is None:
+                return {}
+            
+            # Find the asset with this ID
+            assets = get_asset_list()
+            for asset in assets:
+                if asset.get('id') == asset_id:
+                    return asset
+            return {}
+        
+        selected_asset_id.change(
+            fn=update_selected_json,
+            inputs=[selected_asset_id],
+            outputs=[selected_row_json]
+        )
+
+
+# Family member functions
+def create_or_update_family_member(
+    name: str,
+    birth_date: str,  # Receiving as string in YYYY-MM-DD format
+    relationship: str,
+    notes: str,
+    member_id: Optional[int] = None
+) -> str:
+    """Create or update a family member"""
+    db = next(get_db_session())
+    
+    try:
+        # Split name into first and last name
+        first_name, *last_parts = name.split()
+        last_name = " ".join(last_parts) if last_parts else ""
+        
+        # Convert date string to date object
+        birth_date_obj = datetime.strptime(birth_date, "%Y-%m-%d").date()
+        
+        # Prepare family member data
+        member_data = {
+            "first_name": first_name,
+            "last_name": last_name,
+            "date_of_birth": birth_date_obj,
+            "relationship_type": relationship,
+            "user_id": 1,  # Demo user
+            "is_primary": relationship == RelationshipType.SELF.value,
+            "notes": notes
+        }
+        
+        if member_id:
+            member = db.query(FamilyMember).filter(FamilyMember.id == member_id).first()
+            if not member:
+                return f"Error: Family member with ID {member_id} not found"
+            
+            # Update existing member
+            for key, value in member_data.items():
+                setattr(member, key, value)
+        else:
+            # Create new member
+            member = FamilyMember(**member_data)
+            db.add(member)
+        
+        db.commit()
+        db.refresh(member)
+        return f"Family member {member.first_name} {member.last_name} saved successfully"
+    except Exception as e:
+        db.rollback()
+        return f"Error: {str(e)}"
+
+
+def get_family_member_list() -> List[Dict[str, Any]]:
+    """Get a list of all family members"""
+    db = next(get_db_session())
+    members = db.query(FamilyMember).all()
+    
+    result = []
+    for member in members:
+        result.append({
+            "id": member.id,
+            "name": member.first_name + " " + member.last_name,
+            "birth_date": member.date_of_birth.strftime("%Y-%m-%d"),
+            "relationship": member.relationship_type,
+            "notes": member.notes if hasattr(member, "notes") and member.notes is not None else ""
+        })
+    
+    return result
+
+
+def delete_family_member(member_id: int) -> str:
+    """Delete a family member by ID"""
+    db = next(get_db_session())
+    
+    try:
+        member = db.query(FamilyMember).filter(FamilyMember.id == member_id).first()
+        if not member:
+            return f"Error: Family member with ID {member_id} not found"
+        
+        member_name = member.first_name + " " + member.last_name
+        db.delete(member)
+        db.commit()
+        
+        return f"Family member '{member_name}' deleted successfully"
+    except Exception as e:
+        db.rollback()
+        return f"Error deleting family member: {str(e)}"
+
+
+def get_family_member_details(member_id: int) -> Tuple:
+    """Get details for a specific family member"""
+    db = next(get_db_session())
+    
+    member = db.query(FamilyMember).filter(FamilyMember.id == member_id).first()
+    
+    if not member:
+        return ("", date.today().strftime("%Y-%m-%d"), RelationshipType.SELF.value, "", None)
+    
+    # Get notes with a safe default
+    notes = member.notes if hasattr(member, "notes") and member.notes is not None else ""
+    
+    return (
+        f"{member.first_name} {member.last_name}",  # Combined name
+        member.date_of_birth.strftime("%Y-%m-%d"),
+        member.relationship_type,
+        notes,
+        member.id
+    )
+
+
+def get_family_member_dataframe() -> pd.DataFrame:
+    """Convert family member list to DataFrame for display"""
+    db = next(get_db_session())
+    members = db.query(FamilyMember).all()
+    
+    # Format the data for display
+    data = []
+    for member in members:
+        data.append({
+            "ID": member.id,
+            "Name": f"{member.first_name} {member.last_name}",
+            "Birth Date": member.date_of_birth.strftime("%Y-%m-%d"),
+            "Relationship": member.relationship_type,
+            "Primary": "Yes" if member.is_primary else "No"
+        })
+    
+    return pd.DataFrame(data)
+
+
+# Family member tab
+def family_member_tab():
+    with gr.Tab("Family Members"):
+        # Create state management for showing/hiding views
+        view_state = gr.State("list")  # Default to list view
+        selected_member_id = gr.State(None)
+
+        # List view components
+        gr.Markdown("## Family Members")
+        member_table = gr.DataFrame(get_family_member_dataframe(), visible=True)
+        
+        with gr.Row(visible=True) as list_buttons:
+            add_member_button = gr.Button("Add New Family Member", variant="primary")
+            refresh_list_button = gr.Button("Refresh List")
+            edit_member_button = gr.Button("Edit Selected Member")
+            delete_member_button = gr.Button("Delete Selected Member")
+        
+        # Selected row display - initialize with empty dict instead of None
+        selected_row_json = gr.JSON({}, label="Selected Family Member", visible=True)
+
+        # Form view components (initially hidden)
+        gr.Markdown("## Family Member Details")
+        
+        # Family member form inputs
+        member_id = gr.Number(visible=False)
+        name = gr.Textbox(label="Name", visible=False)
+        birth_date = gr.Textbox(
+            label="Birth Date",
+            value=date.today().strftime("%Y-%m-%d"),
+            placeholder="YYYY-MM-DD",
+            visible=False
+        )
+        relationship = gr.Dropdown(
+            label="Relationship",
+            choices=[t.value for t in RelationshipType],
+            value=RelationshipType.SELF.value,
+            visible=False
+        )
+        notes = gr.Textbox(label="Notes", lines=3, visible=False)
+        
+        # Form buttons
+        with gr.Row(visible=False) as form_buttons:
+            save_button = gr.Button("Save Family Member", variant="primary")
+            cancel_button = gr.Button("Cancel")
+        
+        # Result message
+        result_message = gr.Textbox(label="Result", visible=True)
+        
+        # Preview
+        preview = gr.JSON(label="Family Member Details Preview", visible=False)
+        
+        # Update preview when form fields change
+        def update_preview(name, birth_date, relationship, notes, member_id):
+            return {
+                "id": member_id,
+                "name": name,
+                "birth_date": birth_date,
+                "relationship": relationship,
+                "notes": notes
+            }
+        
+        for field in [name, birth_date, relationship, notes, member_id]:
+            field.change(
+                fn=update_preview,
+                inputs=[name, birth_date, relationship, notes, member_id],
+                outputs=preview
+            )
+        
+        # Table selection event
+        def handle_selection(evt: gr.SelectData, state: Dict):
+            row_index = evt.index[0]
+            df = get_family_member_dataframe()
+            member_id = int(df.iloc[row_index]["ID"])
+            row_data = df.iloc[row_index].to_dict()
+            return member_id, {"value": row_data}
+        
+        member_table.select(
+            fn=handle_selection,
+            inputs=[selected_member_id],
+            outputs=[selected_member_id, selected_row_json]
+        )
+        
+        # Switch to form view functions
+        def show_form_view(view="new", member_id=None):
+            if view == "new":
+                # Clear form for new member
+                return (
+                    "form",  # view_state
+                    None,    # selected_member_id
+                    gr.update(visible=False),  # member_table
+                    gr.update(visible=False),  # list_buttons
+                    gr.update(visible=False),  # selected_row_json
+                    gr.update(visible=True),   # name
+                    gr.update(visible=True),   # birth_date
+                    gr.update(visible=True),   # relationship
+                    gr.update(visible=True),   # notes
+                    gr.update(visible=True),   # form_buttons
+                    gr.update(visible=True),   # preview
+                    "",      # name value
+                    date.today().strftime("%Y-%m-%d"),  # birth_date value
+                    RelationshipType.SELF.value,  # relationship value
+                    "",      # notes value
+                    None,    # member_id value
+                    ""       # result_message
+                )
+            else:
+                # Load member details for editing
+                name_val, birth_date_val, relationship_val, notes_val, member_id_val = get_family_member_details(member_id)
+                return (
+                    "form",  # view_state
+                    member_id,  # selected_member_id
+                    gr.update(visible=False),  # member_table
+                    gr.update(visible=False),  # list_buttons
+                    gr.update(visible=False),  # selected_row_json
+                    gr.update(visible=True),   # name
+                    gr.update(visible=True),   # birth_date
+                    gr.update(visible=True),   # relationship
+                    gr.update(visible=True),   # notes
+                    gr.update(visible=True),   # form_buttons
+                    gr.update(visible=True),   # preview
+                    name_val,     # name value
+                    birth_date_val,  # birth_date value
+                    relationship_val,  # relationship value
+                    notes_val,    # notes value
+                    member_id_val,  # member_id value
+                    ""        # result_message
+                )
+        
+        # Switch to list view function
+        def show_list_view():
+            return (
+                "list",  # view_state
+                gr.update(visible=True),   # member_table
+                gr.update(visible=True),   # list_buttons
+                gr.update(visible=True),   # selected_row_json
+                gr.update(visible=False),  # name
+                gr.update(visible=False),  # birth_date
+                gr.update(visible=False),  # relationship
+                gr.update(visible=False),  # notes
+                gr.update(visible=False),  # form_buttons
+                gr.update(visible=False),  # preview
+                get_family_member_dataframe()  # refresh table data
+            )
+        
+        # Add new member button
+        add_member_button.click(
+            fn=show_form_view,
+            inputs=[],
+            outputs=[
+                view_state, 
+                selected_member_id,
+                member_table,
+                list_buttons,
+                selected_row_json,
+                name,
+                birth_date,
+                relationship,
+                notes,
+                form_buttons,
+                preview,
+                name,
+                birth_date,
+                relationship,
+                notes,
+                member_id,
+                result_message
+            ]
+        )
+        
+        # Edit selected member button
+        def edit_selected_member(member_id):
+            if member_id is None:
+                return [
+                    "list", None,
+                    gr.update(visible=True), gr.update(visible=True), gr.update(visible=True),
+                    gr.update(visible=False), gr.update(visible=False), gr.update(visible=False),
+                    gr.update(visible=False), gr.update(visible=False), gr.update(visible=False),
+                    gr.update(visible=False), gr.update(visible=False), gr.update(visible=False),
+                    gr.update(visible=False),
+                    gr.update(), gr.update(), gr.update(), gr.update(), gr.update(),
+                    gr.update(), gr.update(),
+                    "Please select a family member to edit"
+                ]
+            return show_form_view("edit", member_id)
+        
+        edit_member_button.click(
+            fn=edit_selected_member,
+            inputs=[selected_member_id],
+            outputs=[
+                view_state,
+                selected_member_id,
+                member_table,
+                list_buttons,
+                selected_row_json,
+                name,
+                birth_date,
+                relationship,
+                notes,
+                form_buttons,
+                preview,
+                name,
+                birth_date,
+                relationship,
+                notes,
+                member_id,
+                result_message
+            ]
+        )
+        
+        # Delete selected member button
+        def delete_selected_member(member_id):
+            if member_id is None:
+                return "Please select a family member to delete", None, get_family_member_dataframe()
+            
+            # Perform the delete operation
+            result = delete_family_member(member_id)
+            
+            # Return message, clear selected ID, and update table
+            return result, None, get_family_member_dataframe()
+        
+        delete_member_button.click(
+            fn=delete_selected_member,
+            inputs=[selected_member_id],
+            outputs=[result_message, selected_member_id, member_table]
+        )
+        
+        # Refresh list button
+        refresh_list_button.click(
+            fn=get_family_member_dataframe,
+            inputs=[],
+            outputs=[member_table]
+        )
+        
+        # Cancel button
+        cancel_button.click(
+            fn=show_list_view,
+            inputs=[],
+            outputs=[
+                view_state,
+                member_table,
+                list_buttons,
+                selected_row_json,
+                name,
+                birth_date,
+                relationship,
+                notes,
+                form_buttons,
+                preview,
+                member_table
+            ]
+        )
+        
+        # Save member button
+        def save_member_and_return(
+            name, birth_date, relationship, notes, member_id
+        ):
+            # Pass the notes field
+            result = create_or_update_family_member(
+                name, birth_date, relationship, notes, member_id
+            )
+            
+            # Return to list view with updated data
+            return [
+                "list",  # view_state
+                gr.update(visible=True),   # member_table
+                gr.update(visible=True),   # list_buttons
+                gr.update(visible=True),   # selected_row_json
+                gr.update(visible=False),  # name
+                gr.update(visible=False),  # birth_date
+                gr.update(visible=False),  # relationship
+                gr.update(visible=False),  # notes
+                gr.update(visible=False),  # form_buttons
+                gr.update(visible=False),  # preview
+                result,                    # result_message
+                get_family_member_dataframe()  # refresh table data
+            ]
+        
+        save_button.click(
+            fn=save_member_and_return,
+            inputs=[
+                name, birth_date, relationship, notes, member_id
+            ],
+            outputs=[
+                view_state,
+                member_table,
+                list_buttons,
+                selected_row_json,
+                name,
+                birth_date,
+                relationship,
+                notes,
+                form_buttons,
+                preview,
+                result_message,
+                member_table
+            ]
+        )
+
+        # When the selected ID changes, update the JSON display
+        def update_selected_json(member_id):
+            if member_id is None:
+                return {}
+            
+            # Find the member with this ID
+            members = get_family_member_list()
+            for member in members:
+                if member.get('id') == member_id:
+                    return member
+            return {}
+        
+        selected_member_id.change(
+            fn=update_selected_json,
+            inputs=[selected_member_id],
+            outputs=[selected_row_json]
+        )
+
+
+# Account functions
+def create_or_update_account(
+    name: str,
+    account_type: str,
+    institution: str,
+    notes: str,
+    actual_value: float,
+    actual_value_date: str,  # Receiving as string in YYYY-MM-DD format
+    account_id: Optional[int] = None
+) -> str:
+    """Create or update an investment account with its actual value"""
+    db = next(get_db_session())
+    
+    try:
+        # Convert date string to date object
+        actual_value_date_obj = datetime.strptime(actual_value_date, "%Y-%m-%d").date()
+        
+        # Prepare account data
+        account_data = {
+            "name": name,
+            "account_type": account_type,
+            "institution": institution,
+            "notes": notes,
+            "user_id": 1,  # Demo user
+            "family_member_id": 1  # Demo family member (primary)
+        }
+        
+        if account_id:
+            account_data["id"] = account_id
+        
+        # Create or update account with actual value
+        account = value_service.create_or_update_entity_with_actual_value(
+            db=db,
+            entity_data=account_data,
+            entity_type=EntityType.INVESTMENT_ACCOUNT,
+            actual_value=actual_value,
+            actual_value_date=actual_value_date_obj
+        )
+        
+        return f"Account {account.name} saved successfully with actual value {actual_value} as of {actual_value_date}"
+    except Exception as e:
+        return f"Error: {str(e)}"
+
+
+def get_account_list() -> List[Dict[str, Any]]:
+    """Get a list of all accounts with their actual values"""
+    db = next(get_db_session())
+    accounts = db.query(InvestmentAccount).all()
+    
+    result = []
+    for account in accounts:
+        account_dict = value_service.get_entity_with_actual_value(
+            db=db,
+            entity_type=EntityType.INVESTMENT_ACCOUNT,
+            entity_id=account.id
+        )
+        result.append(account_dict)
+    
+    return result
+
+
+def delete_account(account_id: int) -> str:
+    """Delete an account by ID"""
+    db = next(get_db_session())
+    
+    try:
+        account = db.query(InvestmentAccount).filter(InvestmentAccount.id == account_id).first()
+        if not account:
+            return f"Error: Account with ID {account_id} not found"
+        
+        # Delete associated value records first
+        value_records = db.query(ValueRecord).filter(
+            ValueRecord.entity_type == EntityType.INVESTMENT_ACCOUNT,
+            ValueRecord.entity_id == account_id
+        ).all()
+        
+        for record in value_records:
+            db.delete(record)
+        
+        # Now delete the account
+        account_name = account.name
+        db.delete(account)
+        db.commit()
+        
+        return f"Account '{account_name}' deleted successfully"
+    except Exception as e:
+        db.rollback()
+        return f"Error deleting account: {str(e)}"
+
+
+def get_account_details(account_id: int) -> Tuple:
+    """Get details for a specific account"""
+    db = next(get_db_session())
+    
+    account_dict = value_service.get_entity_with_actual_value(
+        db=db,
+        entity_type=EntityType.INVESTMENT_ACCOUNT,
+        entity_id=account_id
+    )
+    
+    if not account_dict:
+        return ("", "", "", "", 0.0, date.today().strftime("%Y-%m-%d"), None)
+    
+    # Extract values for the form
+    name = account_dict.get("name", "")
+    account_type = account_dict.get("account_type", "")
+    institution = account_dict.get("institution", "")
+    notes = account_dict.get("notes", "")
+    actual_value = float(account_dict.get("actual_value", 0.0))
+    actual_value_date = account_dict.get("actual_value_date", date.today())
+    if isinstance(actual_value_date, date):
+        actual_value_date = actual_value_date.strftime("%Y-%m-%d")
+    
+    return (name, account_type, institution, notes, actual_value, actual_value_date, account_id)
+
+
+def get_account_dataframe() -> pd.DataFrame:
+    """Convert account list to DataFrame for display"""
+    accounts = get_account_list()
+    
+    # Format the data for display
+    data = []
+    for account in accounts:
+        # Handle None values for actual_value
+        actual_value = account.get('actual_value')
+        if actual_value is None:
+            actual_value = 0.0
+        
+        # Handle None values for actual_value_date
+        actual_value_date = account.get('actual_value_date')
+        if actual_value_date:
+            actual_value_date = actual_value_date.strftime("%Y-%m-%d")
+        else:
+            actual_value_date = ""
+            
+        data.append({
+            "ID": account.get("id", ""),
+            "Name": account.get("name", ""),
+            "Type": account.get("account_type", ""),
+            "Institution": account.get("institution", ""),
+            "Current Value": f"${float(actual_value):,.2f}",
+            "As of Date": actual_value_date
+        })
+    
+    return pd.DataFrame(data)
+
+
+# Account tab
+def account_tab():
+    with gr.Tab("Accounts"):
+        # Create state management for showing/hiding views
+        view_state = gr.State("list")  # Default to list view
+        selected_account_id = gr.State(None)
+
+        # List view components
+        gr.Markdown("## Investment Accounts")
+        account_table = gr.DataFrame(get_account_dataframe(), visible=True)
+        
+        with gr.Row(visible=True) as list_buttons:
+            add_account_button = gr.Button("Add New Account", variant="primary")
+            refresh_list_button = gr.Button("Refresh List")
+            edit_account_button = gr.Button("Edit Selected Account")
+            delete_account_button = gr.Button("Delete Selected Account")
+        
+        # Selected row display - initialize with empty dict instead of None
+        selected_row_json = gr.JSON({}, label="Selected Account", visible=True)
+
+        # Form view components (initially hidden)
+        gr.Markdown("## Account Details")
+        
+        # Account form inputs
+        account_id = gr.Number(visible=False)
+        name = gr.Textbox(label="Account Name", visible=False)
+        account_type = gr.Dropdown(
+            label="Account Type",
+            choices=[t.value for t in AccountType],
+            value=AccountType.NON_REGISTERED.value,
+            visible=False
+        )
+        institution = gr.Textbox(label="Financial Institution", visible=False)
+        notes = gr.Textbox(label="Notes", lines=3, visible=False)
+        
+        # Actual value section
+        value_section_header = gr.Markdown("### Current Value", visible=False)
+        actual_value = gr.Number(label="Current Value ($)", value=0.0, visible=False)
+        actual_value_date = gr.Textbox(
+            label="Value Date",
+            value=date.today().strftime("%Y-%m-%d"),
+            placeholder="YYYY-MM-DD",
+            visible=False
+        )
+        
+        # Form buttons
+        with gr.Row(visible=False) as form_buttons:
+            save_button = gr.Button("Save Account", variant="primary")
+            cancel_button = gr.Button("Cancel")
+        
+        # Result message
+        result_message = gr.Textbox(label="Result", visible=True)
+        
+        # Preview
+        preview = gr.JSON(label="Account Details Preview", visible=False)
+        
+        # Update preview when form fields change
+        def update_preview(name, account_type, institution, notes, actual_value, actual_value_date, account_id):
+            return {
+                "id": account_id,
+                "name": name,
+                "account_type": account_type,
+                "institution": institution,
+                "notes": notes,
+                "actual_value": actual_value,
+                "actual_value_date": actual_value_date
+            }
+        
+        for field in [name, account_type, institution, notes, actual_value, actual_value_date, account_id]:
+            field.change(
+                fn=update_preview,
+                inputs=[name, account_type, institution, notes, actual_value, actual_value_date, account_id],
+                outputs=preview
+            )
+        
+        # Table selection event
+        def handle_selection(evt: gr.SelectData, state: Dict):
+            row_index = evt.index[0]
+            df = get_account_dataframe()
+            account_id = int(df.iloc[row_index]["ID"])
+            row_data = df.iloc[row_index].to_dict()
+            return account_id, {"value": row_data}
+        
+        account_table.select(
+            fn=handle_selection,
+            inputs=[selected_account_id],
+            outputs=[selected_account_id, selected_row_json]
+        )
+        
+        # Switch to form view functions
+        def show_form_view(view="new", account_id=None):
+            if view == "new":
+                # Clear form for new account
+                return (
+                    "form",  # view_state
+                    None,    # selected_account_id
+                    gr.update(visible=False),  # account_table
+                    gr.update(visible=False),  # list_buttons
+                    gr.update(visible=False),  # selected_row_json
+                    gr.update(visible=True),   # name
+                    gr.update(visible=True),   # account_type
+                    gr.update(visible=True),   # institution
+                    gr.update(visible=True),   # notes
+                    gr.update(visible=True),   # value_section_header
+                    gr.update(visible=True),   # actual_value
+                    gr.update(visible=True),   # actual_value_date
+                    gr.update(visible=True),   # form_buttons
+                    gr.update(visible=True),   # preview
+                    "",      # name value
+                    AccountType.NON_REGISTERED.value,  # account_type value
+                    "",      # institution value
+                    "",      # notes value
+                    0.0,     # actual_value value
+                    date.today().strftime("%Y-%m-%d"),  # actual_value_date value
+                    None,    # account_id value
+                    ""       # result_message
+                )
+            else:
+                # Load account details for editing
+                name_val, account_type_val, institution_val, notes_val, actual_value_val, actual_value_date_val, account_id_val = get_account_details(account_id)
+                return (
+                    "form",  # view_state
+                    account_id,  # selected_account_id
+                    gr.update(visible=False),  # account_table
+                    gr.update(visible=False),  # list_buttons
+                    gr.update(visible=False),  # selected_row_json
+                    gr.update(visible=True),   # name
+                    gr.update(visible=True),   # account_type
+                    gr.update(visible=True),   # institution
+                    gr.update(visible=True),   # notes
+                    gr.update(visible=True),   # value_section_header
+                    gr.update(visible=True),   # actual_value
+                    gr.update(visible=True),   # actual_value_date
+                    gr.update(visible=True),   # form_buttons
+                    gr.update(visible=True),   # preview
+                    name_val,     # name value
+                    account_type_val,  # account_type value
+                    institution_val,  # institution value
+                    notes_val,    # notes value
+                    actual_value_val,  # actual_value value
+                    actual_value_date_val,  # actual_value_date value
+                    account_id_val,  # account_id value
+                    ""        # result_message
+                )
+        
+        # Switch to list view function
+        def show_list_view():
+            return (
+                "list",  # view_state
+                gr.update(visible=True),   # account_table
+                gr.update(visible=True),   # list_buttons
+                gr.update(visible=True),   # selected_row_json
+                gr.update(visible=False),  # name
+                gr.update(visible=False),  # account_type
+                gr.update(visible=False),  # institution
+                gr.update(visible=False),  # notes
+                gr.update(visible=False),  # value_section_header
+                gr.update(visible=False),  # actual_value
+                gr.update(visible=False),  # actual_value_date
+                gr.update(visible=False),  # form_buttons
+                gr.update(visible=False),  # preview
+                get_account_dataframe()  # refresh table data
+            )
+        
+        # Add new account button
+        add_account_button.click(
+            fn=show_form_view,
+            inputs=[],
+            outputs=[
+                view_state, 
+                selected_account_id,
+                account_table,
+                list_buttons,
+                selected_row_json,
+                name,
+                account_type,
+                institution,
+                notes,
+                value_section_header,
+                actual_value,
+                actual_value_date,
+                form_buttons,
+                preview,
+                name,
+                account_type,
+                institution,
+                notes,
+                actual_value,
+                actual_value_date,
+                account_id,
+                result_message
+            ]
+        )
+        
+        # Edit selected account button
+        def edit_selected_account(account_id):
+            if account_id is None:
+                return [
+                    "list", None,
+                    gr.update(visible=True), gr.update(visible=True), gr.update(visible=True),
+                    gr.update(visible=False), gr.update(visible=False), gr.update(visible=False),
+                    gr.update(visible=False), gr.update(visible=False), gr.update(visible=False),
+                    gr.update(visible=False), gr.update(visible=False), gr.update(visible=False),
+                    gr.update(visible=False),
+                    gr.update(), gr.update(), gr.update(), gr.update(), gr.update(),
+                    gr.update(), gr.update(),
+                    "Please select an account to edit"
+                ]
+            return show_form_view("edit", account_id)
+        
+        edit_account_button.click(
+            fn=edit_selected_account,
+            inputs=[selected_account_id],
+            outputs=[
+                view_state,
+                selected_account_id,
+                account_table,
+                list_buttons,
+                selected_row_json,
+                name,
+                account_type,
+                institution,
+                notes,
+                value_section_header,
+                actual_value,
+                actual_value_date,
+                form_buttons,
+                preview,
+                name,
+                account_type,
+                institution,
+                notes,
+                actual_value,
+                actual_value_date,
+                account_id,
+                result_message
+            ]
+        )
+        
+        # Delete selected account button
+        def delete_selected_account(account_id):
+            if account_id is None:
+                return "Please select an account to delete", None, get_account_dataframe()
+            
+            # Perform the delete operation
+            result = delete_account(account_id)
+            
+            # Return message, clear selected ID, and update table
+            return result, None, get_account_dataframe()
+        
+        delete_account_button.click(
+            fn=delete_selected_account,
+            inputs=[selected_account_id],
+            outputs=[result_message, selected_account_id, account_table]
+        )
+        
+        # Refresh list button
+        refresh_list_button.click(
+            fn=get_account_dataframe,
+            inputs=[],
+            outputs=[account_table]
+        )
+        
+        # Cancel button
+        cancel_button.click(
+            fn=show_list_view,
+            inputs=[],
+            outputs=[
+                view_state,
+                account_table,
+                list_buttons,
+                selected_row_json,
+                name,
+                account_type,
+                institution,
+                notes,
+                value_section_header,
+                actual_value,
+                actual_value_date,
+                form_buttons,
+                preview,
+                account_table
+            ]
+        )
+        
+        # Save account button
+        def save_account_and_return(
+            name, account_type, institution, notes, actual_value, actual_value_date, account_id
+        ):
+            result = create_or_update_account(
+                name, account_type, institution, notes, actual_value, actual_value_date, account_id
+            )
+            
+            # Return to list view with updated data
+            return [
+                "list",  # view_state
+                gr.update(visible=True),   # account_table
+                gr.update(visible=True),   # list_buttons
+                gr.update(visible=True),   # selected_row_json
+                gr.update(visible=False),  # name
+                gr.update(visible=False),  # account_type
+                gr.update(visible=False),  # institution
+                gr.update(visible=False),  # notes
+                gr.update(visible=False),  # value_section_header
+                gr.update(visible=False),  # actual_value
+                gr.update(visible=False),  # actual_value_date
+                gr.update(visible=False),  # form_buttons
+                gr.update(visible=False),  # preview
+                result,                    # result_message
+                get_account_dataframe()    # refresh table data
+            ]
+        
+        save_button.click(
+            fn=save_account_and_return,
+            inputs=[
+                name, account_type, institution, notes, actual_value, actual_value_date, account_id
+            ],
+            outputs=[
+                view_state,
+                account_table,
+                list_buttons,
+                selected_row_json,
+                name,
+                account_type,
+                institution,
+                notes,
+                value_section_header,
+                actual_value,
+                actual_value_date,
+                form_buttons,
+                preview,
+                result_message,
+                account_table
+            ]
+        )
+
+        # When the selected ID changes, update the JSON display
+        def update_selected_json(account_id):
+            if account_id is None:
+                return {}
+            
+            # Find the account with this ID
+            accounts = get_account_list()
+            for account in accounts:
+                if account.get('id') == account_id:
+                    return account
+            return {}
+        
+        selected_account_id.change(
+            fn=update_selected_json,
+            inputs=[selected_account_id],
+            outputs=[selected_row_json]
+        )
+
+
+# Main app setup
+def create_app():
+    # Initialize database
+    db, user, scenario = setup_db()
+    
+    app = gr.Blocks(title="WealthSphere Prototype")
+    
+    with app:
+        gr.Markdown("# WealthSphere Financial Planning Prototype")
+        gr.Markdown("### This prototype demonstrates the features of the final application")
+        
+        # Tabs for different entity types
+        with gr.Tabs():
+            dashboard_tab()
+            asset_tab()
+            family_member_tab()
+            account_tab()
+            # Future tabs for other entity types would go here
+    
+    return app
+
+
+if __name__ == "__main__":
+    app = create_app()
+    app.launch() 

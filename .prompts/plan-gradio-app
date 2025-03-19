@@ -1,0 +1,238 @@
+Yes, it does make sense. You can treat the **Actual** scenario values as a seamless extension of each entity’s form, rather than forcing users to switch to a separate “value form.” Here’s how the underlying models and services might be organized to support this approach:
+
+---
+
+## 1. Data Model Overview
+
+### A. **Entity Models**
+
+Each financial entity (e.g., `Asset`, `InvestmentAccount`, `Expense`, `InsurancePolicy`) stores only metadata about that entity.  
+- **Example** (Asset model):
+  ```python
+  class Asset(Base):
+      __tablename__ = "assets"
+
+      id = Column(Integer, primary_key=True, index=True)
+      user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+      name = Column(String, nullable=False)
+      asset_type = Column(Enum(AssetType), nullable=False)
+      notes = Column(Text, nullable=True)
+
+      # No direct 'current_value' or 'purchase_value' fields here
+  ```
+  The same principle applies to other entities: only store identifying and descriptive info.
+
+### B. **Scenario Model**
+
+A simple table to track different scenarios:
+```python
+class Scenario(Base):
+    __tablename__ = "scenarios"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, unique=True, nullable=False)
+    is_default = Column(Boolean, default=False, nullable=False)
+    is_locked = Column(Boolean, default=False, nullable=False)
+    # For "Actual", is_default=True, is_locked=True
+```
+- The default “Actual” scenario is locked and used for real/historical data.
+- Additional user-created scenarios are unlocked for “what-if” planning.
+
+### C. **Value Model**
+
+A dedicated table (e.g., `ValueRecord`) to store all monetary values for any entity:
+```python
+class ValueRecord(Base):
+    __tablename__ = "values"
+
+    id = Column(Integer, primary_key=True, index=True)
+    entity_type = Column(String, nullable=False)  # e.g., "asset", "investment_account", etc.
+    entity_id = Column(Integer, nullable=False)    # The ID of the actual entity
+    scenario_id = Column(Integer, ForeignKey("scenarios.id"), nullable=False)
+    value_date = Column(Date, nullable=False)
+    value_amount = Column(Float, nullable=False)
+
+    # Relationship if needed
+    scenario = relationship("Scenario", back_populates="value_records")
+```
+- **`entity_type`** can be a string or enum that indicates which table the `entity_id` references (e.g., `"asset"` or `"investment_account"`).  
+- **`entity_id`** points to the entity in question.  
+- **`scenario_id`** references the scenario (e.g., “Actual” or a user-defined scenario).  
+- **`value_date`** and **`value_amount`** store when the value is effective and its numeric amount.
+
+**Note:**  
+- An alternative design is to have separate value tables for each entity type. But a single, generic table can simplify scenario-based queries and reduce schema duplication.
+
+---
+
+## 2. Services & Logic
+
+### A. **Creating an Entity with an Actual Value**
+
+When a user creates a new entity (e.g., an Asset) and also supplies an “Actual” value and date:
+1. **Create the entity** in its own table (e.g., `assets`).
+2. **Look up the “Actual” scenario** (the default, locked scenario).
+3. **Create a `ValueRecord`** with:
+   - `entity_type` = `"asset"`
+   - `entity_id` = the newly created asset’s ID
+   - `scenario_id` = Actual scenario’s ID
+   - `value_date` = the date provided
+   - `value_amount` = the numeric value provided
+
+### B. **Editing the Actual Value**
+
+When the user opens the entity form (for an existing entity) and updates the Actual value:
+1. **Fetch** the latest `ValueRecord` for this entity in the Actual scenario (by matching `entity_type`, `entity_id`, and `scenario_id`).
+2. Compare the new date/value to the existing record(s):
+   - If **same date**: Update the existing `ValueRecord`’s `value_amount`.
+   - If **different date**: Create a **new** `ValueRecord` (allowing you to track value changes over time if desired).
+3. **Return** or display the updated value in the UI.
+
+### C. **Retrieving the Actual Value**
+
+When displaying the entity form for an existing entity:
+1. **Query** the `ValueRecord` table for the record(s) associated with:
+   - `entity_type` = `"asset"` (or other),
+   - `entity_id` = the entity’s ID,
+   - `scenario_id` = Actual scenario’s ID.
+2. If you only want the latest value, you can filter by date or order by `value_date DESC` and take the first record.
+3. Display that value and date in the “Actual Value” field of the entity form.
+
+---
+
+## 3. Example Service Functions
+
+Below are pseudo-code examples for how the logic might look in a service layer.
+
+### A. **Create or Update an Entity with Actual Value**
+
+```python
+def create_or_update_entity_with_actual_value(
+    db: Session,
+    entity_data: dict,
+    actual_value: float,
+    actual_value_date: date,
+    entity_type: str
+):
+    # 1. Create the entity record
+    if entity_type == "asset":
+        new_entity = Asset(**entity_data)
+        db.add(new_entity)
+        db.commit()
+        db.refresh(new_entity)
+        entity_id = new_entity.id
+    else:
+        # handle other entity types similarly
+        pass
+
+    # 2. Get Actual scenario
+    actual_scenario = db.query(Scenario).filter(Scenario.is_default == True).first()
+
+    # 3. Create or update ValueRecord
+    #    For creation time, we assume there's no existing record
+    new_value = ValueRecord(
+        entity_type=entity_type,
+        entity_id=entity_id,
+        scenario_id=actual_scenario.id,
+        value_date=actual_value_date,
+        value_amount=actual_value
+    )
+    db.add(new_value)
+    db.commit()
+    db.refresh(new_value)
+
+    return new_entity
+```
+
+### B. **Edit Actual Value for an Existing Entity**
+
+```python
+def edit_actual_value_for_entity(
+    db: Session,
+    entity_type: str,
+    entity_id: int,
+    new_value_amount: float,
+    new_value_date: date
+):
+    # 1. Get Actual scenario
+    actual_scenario = db.query(Scenario).filter(Scenario.is_default == True).first()
+
+    # 2. Fetch existing record(s) for this entity + scenario
+    existing_record = db.query(ValueRecord).filter(
+        ValueRecord.entity_type == entity_type,
+        ValueRecord.entity_id == entity_id,
+        ValueRecord.scenario_id == actual_scenario.id,
+        ValueRecord.value_date == new_value_date
+    ).first()
+
+    if existing_record:
+        # If there's already a record for the same date, update it
+        existing_record.value_amount = new_value_amount
+        db.commit()
+        db.refresh(existing_record)
+        return existing_record
+    else:
+        # Otherwise, create a new record
+        new_record = ValueRecord(
+            entity_type=entity_type,
+            entity_id=entity_id,
+            scenario_id=actual_scenario.id,
+            value_date=new_value_date,
+            value_amount=new_value_amount
+        )
+        db.add(new_record)
+        db.commit()
+        db.refresh(new_record)
+        return new_record
+```
+
+---
+
+## 4. Integrating into the UI (Gradio or Otherwise)
+
+1. **Entity Form Layout:**  
+   - **Top Section**: Entity fields (e.g., asset name, type, notes, etc.).  
+   - **Bottom Section**: “Actual Value” and “Actual Value Date” inputs.  
+   - On submit:
+     - If creating a new entity, call the `create_or_update_entity_with_actual_value(...)` service function.
+     - If editing, call the `edit_actual_value_for_entity(...)` service function.
+
+2. **Data Retrieval for Editing:**  
+   - When loading the form for an existing entity, fetch the latest actual value from `ValueRecord`.
+   - Populate the “Actual Value” and “Date” fields accordingly.
+
+3. **Future Extension for Other Scenarios:**  
+   - Later, you can add a dropdown or toggle to manage scenario-based values in a similar manner (but for now, we’re focusing on the “Actual” scenario).
+
+---
+
+## 5. Considerations & Best Practices
+
+1. **Data Consistency & Performance:**  
+   - Ensure that `entity_type` + `entity_id` pairs are valid references. Some teams prefer a more robust approach (e.g., separate tables or polymorphic relationships).  
+   - Index `entity_type`, `entity_id`, and `scenario_id` for faster lookups.
+
+2. **Date Granularity:**  
+   - Decide if you allow multiple records for the same date (with different times?), or if you strictly store only one record per date. If you want daily changes, that’s fine; if you only need monthly or yearly, you could store just the year-month or year.
+
+3. **Auditing and History:**  
+   - This approach naturally supports a history of value changes over time. If the user updates an entity’s actual value on a new date, a new record is created, preserving older data.
+
+4. **Scenario Expansion:**  
+   - As you integrate more scenarios, the same logic applies—just swap out the `scenario_id`. For example, a user might define “Optimistic” or “Pessimistic” scenarios. The only difference is the scenario reference in the `ValueRecord`.
+
+---
+
+## 6. Summary
+
+- **Entities**: Store metadata only.  
+- **Values**: Stored in a dedicated table (`ValueRecord`), referencing scenario and date.  
+- **“Actual”** scenario: A locked scenario that captures real/historical data, maintained directly in each entity’s form.  
+- **Services**: Provide convenient functions to create/edit entities alongside their actual value record.  
+- **UI**: Each entity form includes a section for “Actual Value” and “Actual Value Date.” No separate “value form” is needed for this scenario.
+
+With this setup, you keep your model clean, easily expand to multiple scenarios, and preserve a historical log of changes for the “Actual” scenario. It should also fit naturally into a Gradio prototype or any other front-end approach you decide on later.
+
+---
+
+**Does this align with your vision for integrating Actual values directly into each entity’s form, while still leveraging a dedicated table for scenario-based values?**

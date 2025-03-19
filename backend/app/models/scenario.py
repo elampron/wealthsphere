@@ -20,6 +20,7 @@ class Scenario(Base):
 
     # Relationships
     user = relationship("User", back_populates="scenarios")
+    value_records = relationship("ValueRecord", back_populates="scenario")
     
     def __repr__(self):
         return f"<Scenario {self.name}>" 

@@ -1,9 +1,20 @@
-from sqlalchemy import Boolean, Column, Integer, String, Date, ForeignKey
+from sqlalchemy import Boolean, Column, Integer, String, Date, ForeignKey, Enum
 from sqlalchemy.orm import relationship
 from datetime import date
 from typing import Optional
+import enum
 
 from app.db import Base
+
+
+class RelationshipType(str, enum.Enum):
+    """Enum for family member relationships"""
+    SELF = "self"
+    SPOUSE = "spouse"
+    CHILD = "child"
+    PARENT = "parent"
+    SIBLING = "sibling"
+    OTHER = "other"
 
 
 class FamilyMember(Base):
@@ -15,10 +26,11 @@ class FamilyMember(Base):
     first_name = Column(String, nullable=False)
     last_name = Column(String, nullable=False)
     date_of_birth = Column(Date, nullable=False)
-    relationship_type = Column(String, nullable=False)  # e.g., "self", "spouse", "child", "parent"
+    relationship_type = Column(Enum(RelationshipType), nullable=False)  # Using the RelationshipType enum
     is_primary = Column(Boolean, default=False)  # Is this the primary user/account holder
     expected_retirement_age = Column(Integer, nullable=True)
     expected_death_age = Column(Integer, nullable=True, default=90)  # Default life expectancy
+    notes = Column(String, nullable=True, default="")  # General notes about the family member
     
     # Relationships
     user = relationship("User", back_populates="family_members")

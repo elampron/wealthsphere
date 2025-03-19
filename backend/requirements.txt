@@ -13,4 +13,6 @@ email-validator==2.1.0.post1
 pydantic[email]
 bcrypt
 pytest
-httpx 
+httpx
+gradio==4.44.1
+pandas==2.2.0 

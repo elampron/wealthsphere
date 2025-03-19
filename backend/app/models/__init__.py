@@ -1,5 +1,5 @@
 from app.models.user import User
-from app.models.family import FamilyMember
+from app.models.family import FamilyMember, RelationshipType
 from app.models.finance import (
     InvestmentAccount,
     Asset,
@@ -9,6 +9,8 @@ from app.models.finance import (
     AssetType,
     IncomeType,
     ExpenseType,
+    EntityType,
+    ValueRecord,
 )
 from app.models.insurance import InsurancePolicy, InsuranceType
 from app.models.scenario import Scenario
@@ -17,6 +19,7 @@ from app.models.scenario import Scenario
 __all__ = [
     "User",
     "FamilyMember",
+    "RelationshipType",
     "InvestmentAccount",
     "Asset",
     "IncomeSource",
@@ -28,4 +31,6 @@ __all__ = [
     "ExpenseType",
     "InsuranceType",
     "Scenario",
+    "EntityType",
+    "ValueRecord",
 ] 
