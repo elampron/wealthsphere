@@ -254,7 +254,7 @@ def get_asset_dataframe() -> pd.DataFrame:
         actual_value = asset.get('actual_value')
         if actual_value is None:
             actual_value = 0.0
-            
+        
         # Handle None values for actual_value_date
         actual_value_date = asset.get('actual_value_date')
         if actual_value_date:
@@ -525,7 +525,7 @@ def asset_tab():
                     gr.update(visible=False), gr.update(visible=False), gr.update(visible=False),
                     gr.update(visible=False),
                     gr.update(), gr.update(), gr.update(), gr.update(), gr.update(),
-                    gr.update(), gr.update(), gr.update(),
+                    gr.update(), gr.update(),
                     "Please select an asset to edit"
                 ]
             return show_form_view("edit", asset_id)
@@ -1630,6 +1630,1139 @@ def account_tab():
         )
 
 
+# Income source functions
+def create_or_update_income_source(
+    name: str,
+    income_type: str,
+    annual_amount: float,
+    family_member_id,  # Changed to accept any type
+    start_date: str,  # Receiving as string in YYYY-MM-DD format
+    end_date: str,  # Receiving as string in YYYY-MM-DD format
+    notes: str,
+    income_id: Optional[int] = None
+) -> str:
+    """Create or update an income source"""
+    db = next(get_db_session())
+    
+    try:
+        # Convert date strings to date objects
+        start_date_obj = datetime.strptime(start_date, "%Y-%m-%d").date()
+        end_date_obj = datetime.strptime(end_date, "%Y-%m-%d").date() if end_date else None
+        
+        # Convert dates to years
+        start_year = start_date_obj.year
+        end_year = end_date_obj.year if end_date_obj else None
+        
+        # Handle family_member_id which might be a dict from gradio
+        if isinstance(family_member_id, dict) and "value" in family_member_id:
+            family_member_id = family_member_id["value"]
+        
+        # Prepare income source data
+        income_data = {
+            "name": name,
+            "income_type": income_type,
+            "start_year": start_year,
+            "end_year": end_year,
+            "family_member_id": int(family_member_id),
+            "notes": notes,
+            "expected_growth_rate": 0.0,  # Default to 0% growth
+            "is_taxable": True,  # Default to taxable
+            "user_id": 1  # Demo user
+        }
+        
+        if income_id:
+            income = db.query(IncomeSource).filter(IncomeSource.id == income_id).first()
+            if not income:
+                return f"Error: Income source with ID {income_id} not found"
+            
+            # Update existing income source
+            for key, value in income_data.items():
+                setattr(income, key, value)
+        else:
+            # Create new income source
+            income = IncomeSource(**income_data)
+            db.add(income)
+        
+        db.commit()
+        db.refresh(income)
+        
+        # Add or update the value record for this income source if amount provided
+        if annual_amount > 0:
+            # Get actual scenario
+            scenario = value_service.get_actual_scenario(db)
+            
+            # Create value record with the annual amount
+            value_service.create_or_update_value_record(
+                db=db,
+                entity_type=EntityType.INCOME_SOURCE,
+                entity_id=income.id,
+                scenario_id=scenario.id,
+                value_date=start_date_obj,
+                value_amount=annual_amount
+            )
+        
+        return f"Income source {income.name} saved successfully with annual amount ${annual_amount:,.2f}"
+    except Exception as e:
+        db.rollback()
+        return f"Error: {str(e)}"
+
+
+def get_income_source_list() -> List[Dict[str, Any]]:
+    """Get a list of all income sources"""
+    db = next(get_db_session())
+    income_sources = db.query(IncomeSource).all()
+    
+    result = []
+    for income in income_sources:
+        # Get family member name
+        family_member = db.query(FamilyMember).filter(FamilyMember.id == income.family_member_id).first()
+        family_member_name = f"{family_member.first_name} {family_member.last_name}" if family_member else "Unknown"
+        
+        # Get the current value (amount) from value records
+        scenario = value_service.get_actual_scenario(db)
+        value_record = db.query(ValueRecord).filter(
+            ValueRecord.entity_type == EntityType.INCOME_SOURCE,
+            ValueRecord.entity_id == income.id,
+            ValueRecord.scenario_id == scenario.id
+        ).order_by(ValueRecord.value_date.desc()).first()
+        
+        annual_amount = value_record.value_amount if value_record else 0.0
+        
+        # Format dates for display
+        start_date = date(income.start_year, 1, 1)
+        end_date = date(income.end_year, 12, 31) if income.end_year else None
+        end_date_str = end_date.strftime("%Y-%m-%d") if end_date else "Ongoing"
+        
+        result.append({
+            "id": income.id,
+            "name": income.name,
+            "income_type": income.income_type,
+            "annual_amount": annual_amount,
+            "family_member_id": income.family_member_id,
+            "family_member_name": family_member_name,
+            "start_date": start_date.strftime("%Y-%m-%d"),
+            "end_date": end_date_str,
+            "notes": income.notes if income.notes is not None else ""
+        })
+    
+    return result
+
+
+def get_income_source_details(income_id: int) -> Tuple:
+    """Get details for a specific income source"""
+    db = next(get_db_session())
+    
+    income = db.query(IncomeSource).filter(IncomeSource.id == income_id).first()
+    
+    if not income:
+        return ("", "", 0.0, 1, date.today().strftime("%Y-%m-%d"), "", "", None)
+    
+    # Get the value record for the annual amount
+    scenario = value_service.get_actual_scenario(db)
+    value_record = db.query(ValueRecord).filter(
+        ValueRecord.entity_type == EntityType.INCOME_SOURCE,
+        ValueRecord.entity_id == income.id,
+        ValueRecord.scenario_id == scenario.id
+    ).order_by(ValueRecord.value_date.desc()).first()
+    
+    annual_amount = value_record.value_amount if value_record else 0.0
+    
+    # Format dates for form
+    start_date = date(income.start_year, 1, 1)
+    end_date = date(income.end_year, 12, 31) if income.end_year else None
+    end_date_str = end_date.strftime("%Y-%m-%d") if end_date else ""
+    
+    # Get notes with a safe default
+    notes = income.notes if income.notes is not None else ""
+    
+    return (
+        income.name,
+        income.income_type,
+        annual_amount,
+        income.family_member_id,
+        start_date.strftime("%Y-%m-%d"),
+        end_date_str,
+        notes,
+        income.id
+    )
+
+
+def get_income_source_dataframe() -> pd.DataFrame:
+    """Convert income source list to DataFrame for display"""
+    income_sources = get_income_source_list()
+    
+    # Format the data for display
+    data = []
+    for income in income_sources:
+        data.append({
+            "ID": income.get("id", ""),
+            "Name": income.get("name", ""),
+            "Type": income.get("income_type", ""),
+            "Annual Amount": f"${float(income.get('annual_amount', 0)):,.2f}",
+            "Family Member": income.get("family_member_name", ""),
+            "Start Date": income.get("start_date", ""),
+            "End Date": income.get("end_date", "")
+        })
+    
+    return pd.DataFrame(data)
+
+
+def get_family_member_choices() -> List[Tuple[int, str]]:
+    """Get a list of family members as (id, name) tuples for dropdowns"""
+    db = next(get_db_session())
+    members = db.query(FamilyMember).all()
+    return [(member.id, f"{member.first_name} {member.last_name}") for member in members]
+
+
+# Income source tab
+def income_source_tab():
+    with gr.Tab("Income Sources"):
+        # Create state management for showing/hiding views
+        view_state = gr.State("list")  # Default to list view
+        selected_income_id = gr.State(None)
+
+        # List view components
+        gr.Markdown("## Income Sources")
+        income_table = gr.DataFrame(get_income_source_dataframe(), visible=True)
+        
+        with gr.Row(visible=True) as list_buttons:
+            add_income_button = gr.Button("Add New Income Source", variant="primary")
+            refresh_list_button = gr.Button("Refresh List")
+            edit_income_button = gr.Button("Edit Selected Income Source")
+            delete_income_button = gr.Button("Delete Selected Income Source")
+        
+        # Selected row display
+        selected_row_json = gr.JSON({}, label="Selected Income Source", visible=True)
+
+        # Form view components (initially hidden)
+        gr.Markdown("## Income Source Details")
+        
+        # Income source form inputs
+        income_id = gr.Number(visible=False)
+        name = gr.Textbox(label="Income Name", visible=False)
+        income_type = gr.Dropdown(
+            label="Income Type",
+            choices=[t.value for t in IncomeType],
+            value=IncomeType.SALARY.value,
+            visible=False
+        )
+        annual_amount = gr.Number(label="Annual Amount ($)", value=0.0, visible=False)
+        
+        # Get family member choices
+        family_members = get_family_member_choices()
+        family_member_id = gr.Dropdown(
+            label="Family Member",
+            choices=[{"value": str(id), "label": name} for id, name in family_members],
+            value=str(family_members[0][0]) if family_members else None,
+            visible=False
+        )
+        
+        start_date = gr.Textbox(
+            label="Start Date",
+            value=date.today().strftime("%Y-%m-%d"),
+            placeholder="YYYY-MM-DD",
+            visible=False
+        )
+        end_date = gr.Textbox(
+            label="End Date (leave empty for ongoing)",
+            placeholder="YYYY-MM-DD",
+            visible=False
+        )
+        notes = gr.Textbox(label="Notes", lines=3, visible=False)
+        
+        # Form buttons
+        with gr.Row(visible=False) as form_buttons:
+            save_button = gr.Button("Save Income Source", variant="primary")
+            cancel_button = gr.Button("Cancel")
+        
+        # Result message
+        result_message = gr.Textbox(label="Result", visible=True)
+        
+        # Preview
+        preview = gr.JSON(label="Income Source Details Preview", visible=False)
+        
+        # Update preview when form fields change
+        def update_preview(name, income_type, annual_amount, family_member_id, start_date, 
+                          end_date, notes, income_id):
+            # Extract member_id if it's a dict
+            member_id = family_member_id
+            if isinstance(family_member_id, dict) and "value" in family_member_id:
+                member_id = family_member_id["value"]
+            
+            return {
+                "id": income_id,
+                "name": name,
+                "income_type": income_type,
+                "annual_amount": annual_amount,
+                "family_member_id": member_id,
+                "start_date": start_date,
+                "end_date": end_date,
+                "notes": notes
+            }
+        
+        for field in [name, income_type, annual_amount, family_member_id, start_date, 
+                     end_date, notes, income_id]:
+            field.change(
+                fn=update_preview,
+                inputs=[name, income_type, annual_amount, family_member_id, start_date, 
+                       end_date, notes, income_id],
+                outputs=preview
+            )
+        
+        # Table selection event
+        def handle_selection(evt: gr.SelectData, state: Dict):
+            row_index = evt.index[0]
+            df = get_income_source_dataframe()
+            income_id = int(df.iloc[row_index]["ID"])
+            row_data = df.iloc[row_index].to_dict()
+            return income_id, {"value": row_data}
+        
+        income_table.select(
+            fn=handle_selection,
+            inputs=[selected_income_id],
+            outputs=[selected_income_id, selected_row_json]
+        )
+        
+        # Switch to form view functions
+        def show_form_view(view="new", income_id=None):
+            # Refresh family member choices
+            family_members = get_family_member_choices()
+            family_member_choices = [{"value": str(id), "label": name} for id, name in family_members]
+            default_family_member = str(family_members[0][0]) if family_members else None
+            
+            if view == "new":
+                # Clear form for new income source
+                return (
+                    "form",  # view_state
+                    None,    # selected_income_id
+                    gr.update(visible=False),  # income_table
+                    gr.update(visible=False),  # list_buttons
+                    gr.update(visible=False),  # selected_row_json
+                    gr.update(visible=True),   # name
+                    gr.update(visible=True),   # income_type
+                    gr.update(visible=True),   # annual_amount
+                    gr.update(visible=True, choices=family_member_choices, value=default_family_member),  # family_member_id
+                    gr.update(visible=True),   # start_date
+                    gr.update(visible=True),   # end_date
+                    gr.update(visible=True),   # notes
+                    gr.update(visible=True),   # form_buttons
+                    gr.update(visible=True),   # preview
+                    "",      # name value
+                    IncomeType.SALARY.value,  # income_type value
+                    0.0,     # annual_amount value
+                    default_family_member,  # family_member_id value
+                    date.today().strftime("%Y-%m-%d"),  # start_date value
+                    "",      # end_date value
+                    "",      # notes value
+                    None,    # income_id value
+                    ""       # result_message
+                )
+            else:
+                # Load income source details for editing
+                name_val, income_type_val, annual_amount_val, family_member_id_val, start_date_val, end_date_val, notes_val, income_id_val = get_income_source_details(income_id)
+                return (
+                    "form",  # view_state
+                    income_id,  # selected_income_id
+                    gr.update(visible=False),  # income_table
+                    gr.update(visible=False),  # list_buttons
+                    gr.update(visible=False),  # selected_row_json
+                    gr.update(visible=True),   # name
+                    gr.update(visible=True),   # income_type
+                    gr.update(visible=True),   # annual_amount
+                    gr.update(visible=True, choices=family_member_choices, value=str(family_member_id_val)),  # family_member_id
+                    gr.update(visible=True),   # start_date
+                    gr.update(visible=True),   # end_date
+                    gr.update(visible=True),   # notes
+                    gr.update(visible=True),   # form_buttons
+                    gr.update(visible=True),   # preview
+                    name_val,     # name value
+                    income_type_val,  # income_type value
+                    annual_amount_val,  # annual_amount value
+                    str(family_member_id_val),  # family_member_id value as string
+                    start_date_val,  # start_date value
+                    end_date_val,  # end_date value
+                    notes_val,    # notes value
+                    income_id_val,  # income_id value
+                    ""        # result_message
+                )
+        
+        # Switch to list view function
+        def show_list_view():
+            return (
+                "list",  # view_state
+                gr.update(visible=True),   # income_table
+                gr.update(visible=True),   # list_buttons
+                gr.update(visible=True),   # selected_row_json
+                gr.update(visible=False),  # name
+                gr.update(visible=False),  # income_type
+                gr.update(visible=False),  # annual_amount
+                gr.update(visible=False),  # family_member_id
+                gr.update(visible=False),  # start_date
+                gr.update(visible=False),  # end_date
+                gr.update(visible=False),  # notes
+                gr.update(visible=False),  # form_buttons
+                gr.update(visible=False),  # preview
+                get_income_source_dataframe()  # refresh table data
+            )
+        
+        # Add new income source button
+        add_income_button.click(
+            fn=show_form_view,
+            inputs=[],
+            outputs=[
+                view_state, 
+                selected_income_id,
+                income_table,
+                list_buttons,
+                selected_row_json,
+                name,
+                income_type,
+                annual_amount,
+                family_member_id,
+                start_date,
+                end_date,
+                notes,
+                form_buttons,
+                preview,
+                name,
+                income_type,
+                annual_amount,
+                family_member_id,
+                start_date,
+                end_date,
+                notes,
+                income_id,
+                result_message
+            ]
+        )
+        
+        # Edit selected income source button
+        def edit_selected_income(income_id):
+            if income_id is None:
+                return [
+                    "list", None,
+                    gr.update(visible=True), gr.update(visible=True), gr.update(visible=True),
+                    gr.update(visible=False), gr.update(visible=False), gr.update(visible=False),
+                    gr.update(visible=False), gr.update(visible=False), gr.update(visible=False),
+                    gr.update(visible=False), gr.update(visible=False), gr.update(visible=False),
+                    gr.update(visible=False),
+                    gr.update(), gr.update(), gr.update(), gr.update(), gr.update(),
+                    gr.update(), gr.update(),
+                    "Please select an income source to edit"
+                ]
+            return show_form_view("edit", income_id)
+        
+        edit_income_button.click(
+            fn=edit_selected_income,
+            inputs=[selected_income_id],
+            outputs=[
+                view_state,
+                selected_income_id,
+                income_table,
+                list_buttons,
+                selected_row_json,
+                name,
+                income_type,
+                annual_amount,
+                family_member_id,
+                start_date,
+                end_date,
+                notes,
+                form_buttons,
+                preview,
+                name,
+                income_type,
+                annual_amount,
+                family_member_id,
+                start_date,
+                end_date,
+                notes,
+                income_id,
+                result_message
+            ]
+        )
+        
+        # Delete selected income source button
+        def delete_selected_income(income_id):
+            if income_id is None:
+                return "Please select an income source to delete", None, get_income_source_dataframe()
+            
+            # Perform the delete operation
+            result = delete_income_source(income_id)
+            
+            # Return message, clear selected ID, and update table
+            return result, None, get_income_source_dataframe()
+        
+        delete_income_button.click(
+            fn=delete_selected_income,
+            inputs=[selected_income_id],
+            outputs=[result_message, selected_income_id, income_table]
+        )
+        
+        # Refresh list button
+        refresh_list_button.click(
+            fn=get_income_source_dataframe,
+            inputs=[],
+            outputs=[income_table]
+        )
+        
+        # Cancel button
+        cancel_button.click(
+            fn=show_list_view,
+            inputs=[],
+            outputs=[
+                view_state,
+                income_table,
+                list_buttons,
+                selected_row_json,
+                name,
+                income_type,
+                annual_amount,
+                family_member_id,
+                start_date,
+                end_date,
+                notes,
+                form_buttons,
+                preview,
+                income_table
+            ]
+        )
+        
+        # Save income source button
+        def save_income_and_return(
+            name, income_type, annual_amount, family_member_id, start_date, end_date, notes, income_id
+        ):
+            result = create_or_update_income_source(
+                name, income_type, annual_amount, family_member_id, start_date, end_date, notes, income_id
+            )
+            
+            # Return to list view with updated data
+            return [
+                "list",  # view_state
+                gr.update(visible=True),   # income_table
+                gr.update(visible=True),   # list_buttons
+                gr.update(visible=True),   # selected_row_json
+                gr.update(visible=False),  # name
+                gr.update(visible=False),  # income_type
+                gr.update(visible=False),  # annual_amount
+                gr.update(visible=False),  # family_member_id
+                gr.update(visible=False),  # start_date
+                gr.update(visible=False),  # end_date
+                gr.update(visible=False),  # notes
+                gr.update(visible=False),  # form_buttons
+                gr.update(visible=False),  # preview
+                result,                    # result_message
+                get_income_source_dataframe()  # refresh table data
+            ]
+        
+        save_button.click(
+            fn=save_income_and_return,
+            inputs=[
+                name, income_type, annual_amount, family_member_id, start_date, end_date, notes, income_id
+            ],
+            outputs=[
+                view_state,
+                income_table,
+                list_buttons,
+                selected_row_json,
+                name,
+                income_type,
+                annual_amount,
+                family_member_id,
+                start_date,
+                end_date,
+                notes,
+                form_buttons,
+                preview,
+                result_message,
+                income_table
+            ]
+        )
+
+        # When the selected ID changes, update the JSON display
+        def update_selected_json(income_id):
+            if income_id is None:
+                return {}
+            
+            # Find the income source with this ID
+            income_sources = get_income_source_list()
+            for income in income_sources:
+                if income.get('id') == income_id:
+                    return income
+            return {}
+        
+        selected_income_id.change(
+            fn=update_selected_json,
+            inputs=[selected_income_id],
+            outputs=[selected_row_json]
+        )
+
+
+# Expense functions
+def create_or_update_expense(
+    name: str,
+    expense_type: str,
+    annual_amount: float,
+    family_member_id,  # Changed to accept any type
+    start_date: str,  # Receiving as string in YYYY-MM-DD format
+    end_date: str,  # Receiving as string in YYYY-MM-DD format
+    notes: str,
+    expense_id: Optional[int] = None
+) -> str:
+    """Create or update an expense"""
+    db = next(get_db_session())
+    
+    try:
+        # Convert date strings to date objects
+        start_date_obj = datetime.strptime(start_date, "%Y-%m-%d").date()
+        end_date_obj = datetime.strptime(end_date, "%Y-%m-%d").date() if end_date else None
+        
+        # Convert dates to years
+        start_year = start_date_obj.year
+        end_year = end_date_obj.year if end_date_obj else None
+        
+        # Handle family_member_id which might be a dict from gradio
+        member_id = None
+        if family_member_id:
+            if isinstance(family_member_id, dict) and "value" in family_member_id:
+                member_id = int(family_member_id["value"])
+            else:
+                member_id = int(family_member_id)
+        
+        # Prepare expense data
+        expense_data = {
+            "name": name,
+            "expense_type": expense_type,
+            "start_year": start_year,
+            "end_year": end_year,
+            "family_member_id": member_id,
+            "notes": notes,
+            "expected_growth_rate": 0.0,  # Default to 0% growth
+            "is_tax_deductible": False,  # Default to not tax deductible
+            "user_id": 1  # Demo user
+        }
+        
+        if expense_id:
+            expense = db.query(Expense).filter(Expense.id == expense_id).first()
+            if not expense:
+                return f"Error: Expense with ID {expense_id} not found"
+            
+            # Update existing expense
+            for key, value in expense_data.items():
+                setattr(expense, key, value)
+        else:
+            # Create new expense
+            expense = Expense(**expense_data)
+            db.add(expense)
+        
+        db.commit()
+        db.refresh(expense)
+        
+        # Add or update the value record for this expense if amount provided
+        if annual_amount > 0:
+            # Get actual scenario
+            scenario = value_service.get_actual_scenario(db)
+            
+            # Create value record with the annual amount
+            value_service.create_or_update_value_record(
+                db=db,
+                entity_type=EntityType.EXPENSE,
+                entity_id=expense.id,
+                scenario_id=scenario.id,
+                value_date=start_date_obj,
+                value_amount=annual_amount
+            )
+        
+        return f"Expense {expense.name} saved successfully with annual amount ${annual_amount:,.2f}"
+    except Exception as e:
+        db.rollback()
+        return f"Error: {str(e)}"
+
+
+def get_expense_list() -> List[Dict[str, Any]]:
+    """Get a list of all expenses"""
+    db = next(get_db_session())
+    expenses = db.query(Expense).all()
+    
+    result = []
+    for expense in expenses:
+        # Get family member name
+        family_member = db.query(FamilyMember).filter(FamilyMember.id == expense.family_member_id).first() if expense.family_member_id else None
+        family_member_name = f"{family_member.first_name} {family_member.last_name}" if family_member else "Household"
+        
+        # Get the current value (amount) from value records
+        scenario = value_service.get_actual_scenario(db)
+        value_record = db.query(ValueRecord).filter(
+            ValueRecord.entity_type == EntityType.EXPENSE,
+            ValueRecord.entity_id == expense.id,
+            ValueRecord.scenario_id == scenario.id
+        ).order_by(ValueRecord.value_date.desc()).first()
+        
+        annual_amount = value_record.value_amount if value_record else 0.0
+        
+        # Format dates for display
+        start_date = date(expense.start_year, 1, 1)
+        end_date = date(expense.end_year, 12, 31) if expense.end_year else None
+        end_date_str = end_date.strftime("%Y-%m-%d") if end_date else "Ongoing"
+        
+        result.append({
+            "id": expense.id,
+            "name": expense.name,
+            "expense_type": expense.expense_type,
+            "annual_amount": annual_amount,
+            "family_member_id": expense.family_member_id,
+            "family_member_name": family_member_name,
+            "start_date": start_date.strftime("%Y-%m-%d"),
+            "end_date": end_date_str,
+            "notes": expense.notes if expense.notes is not None else ""
+        })
+    
+    return result
+
+
+def get_expense_details(expense_id: int) -> Tuple:
+    """Get details for a specific expense"""
+    db = next(get_db_session())
+    
+    expense = db.query(Expense).filter(Expense.id == expense_id).first()
+    
+    if not expense:
+        return ("", "", 0.0, 1, date.today().strftime("%Y-%m-%d"), "", "", None)
+    
+    # Get the value record for the annual amount
+    scenario = value_service.get_actual_scenario(db)
+    value_record = db.query(ValueRecord).filter(
+        ValueRecord.entity_type == EntityType.EXPENSE,
+        ValueRecord.entity_id == expense.id,
+        ValueRecord.scenario_id == scenario.id
+    ).order_by(ValueRecord.value_date.desc()).first()
+    
+    annual_amount = value_record.value_amount if value_record else 0.0
+    
+    # Format dates for form
+    start_date = date(expense.start_year, 1, 1)
+    end_date = date(expense.end_year, 12, 31) if expense.end_year else None
+    end_date_str = end_date.strftime("%Y-%m-%d") if end_date else ""
+    
+    # Get notes with a safe default
+    notes = expense.notes if expense.notes is not None else ""
+    
+    return (
+        expense.name,
+        expense.expense_type,
+        annual_amount,
+        expense.family_member_id or 1,  # Default to first family member if None
+        start_date.strftime("%Y-%m-%d"),
+        end_date_str,
+        notes,
+        expense.id
+    )
+
+
+def get_expense_dataframe() -> pd.DataFrame:
+    """Convert expense list to DataFrame for display"""
+    expenses = get_expense_list()
+    
+    # Format the data for display
+    data = []
+    for expense in expenses:
+        data.append({
+            "ID": expense.get("id", ""),
+            "Name": expense.get("name", ""),
+            "Type": expense.get("expense_type", ""),
+            "Annual Amount": f"${float(expense.get('annual_amount', 0)):,.2f}",
+            "Family Member": expense.get("family_member_name", ""),
+            "Start Date": expense.get("start_date", ""),
+            "End Date": expense.get("end_date", "")
+        })
+    
+    return pd.DataFrame(data)
+
+
+# Expense tab
+def expense_tab():
+    with gr.Tab("Expenses"):
+        # Create state management for showing/hiding views
+        view_state = gr.State("list")  # Default to list view
+        selected_expense_id = gr.State(None)
+
+        # List view components
+        gr.Markdown("## Expenses")
+        expense_table = gr.DataFrame(get_expense_dataframe(), visible=True)
+        
+        with gr.Row(visible=True) as list_buttons:
+            add_expense_button = gr.Button("Add New Expense", variant="primary")
+            refresh_list_button = gr.Button("Refresh List")
+            edit_expense_button = gr.Button("Edit Selected Expense")
+            delete_expense_button = gr.Button("Delete Selected Expense")
+        
+        # Selected row display
+        selected_row_json = gr.JSON({}, label="Selected Expense", visible=True)
+
+        # Form view components (initially hidden)
+        gr.Markdown("## Expense Details")
+        
+        # Expense form inputs
+        expense_id = gr.Number(visible=False)
+        name = gr.Textbox(label="Expense Name", visible=False)
+        expense_type = gr.Dropdown(
+            label="Expense Type",
+            choices=[t.value for t in ExpenseType],
+            value=ExpenseType.HOUSING.value,
+            visible=False
+        )
+        annual_amount = gr.Number(label="Annual Amount ($)", value=0.0, visible=False)
+        
+        # Get family member choices
+        family_members = get_family_member_choices()
+        family_member_id = gr.Dropdown(
+            label="Family Member",
+            choices=[{"value": str(id), "label": name} for id, name in family_members],
+            value=str(family_members[0][0]) if family_members else None,
+            visible=False
+        )
+        
+        start_date = gr.Textbox(
+            label="Start Date",
+            value=date.today().strftime("%Y-%m-%d"),
+            placeholder="YYYY-MM-DD",
+            visible=False
+        )
+        end_date = gr.Textbox(
+            label="End Date (leave empty for ongoing)",
+            placeholder="YYYY-MM-DD",
+            visible=False
+        )
+        notes = gr.Textbox(label="Notes", lines=3, visible=False)
+        
+        # Form buttons
+        with gr.Row(visible=False) as form_buttons:
+            save_button = gr.Button("Save Expense", variant="primary")
+            cancel_button = gr.Button("Cancel")
+        
+        # Result message
+        result_message = gr.Textbox(label="Result", visible=True)
+        
+        # Preview
+        preview = gr.JSON(label="Expense Details Preview", visible=False)
+        
+        # Update preview when form fields change
+        def update_preview(name, expense_type, annual_amount, family_member_id, start_date, 
+                          end_date, notes, expense_id):
+            # Extract member_id if it's a dict
+            member_id = family_member_id
+            if isinstance(family_member_id, dict) and "value" in family_member_id:
+                member_id = family_member_id["value"]
+                
+            return {
+                "id": expense_id,
+                "name": name,
+                "expense_type": expense_type,
+                "annual_amount": annual_amount,
+                "family_member_id": member_id,
+                "start_date": start_date,
+                "end_date": end_date,
+                "notes": notes
+            }
+        
+        for field in [name, expense_type, annual_amount, family_member_id, start_date, 
+                     end_date, notes, expense_id]:
+            field.change(
+                fn=update_preview,
+                inputs=[name, expense_type, annual_amount, family_member_id, start_date, 
+                       end_date, notes, expense_id],
+                outputs=preview
+            )
+        
+        # Table selection event
+        def handle_selection(evt: gr.SelectData, state: Dict):
+            row_index = evt.index[0]
+            df = get_expense_dataframe()
+            expense_id = int(df.iloc[row_index]["ID"])
+            row_data = df.iloc[row_index].to_dict()
+            return expense_id, {"value": row_data}
+        
+        expense_table.select(
+            fn=handle_selection,
+            inputs=[selected_expense_id],
+            outputs=[selected_expense_id, selected_row_json]
+        )
+        
+        # Switch to form view functions
+        def show_form_view(view="new", expense_id=None):
+            # Refresh family member choices
+            family_members = get_family_member_choices()
+            family_member_choices = [{"value": str(id), "label": name} for id, name in family_members]
+            default_family_member = str(family_members[0][0]) if family_members else None
+            
+            if view == "new":
+                # Clear form for new expense
+                return (
+                    "form",  # view_state
+                    None,    # selected_expense_id
+                    gr.update(visible=False),  # expense_table
+                    gr.update(visible=False),  # list_buttons
+                    gr.update(visible=False),  # selected_row_json
+                    gr.update(visible=True),   # name
+                    gr.update(visible=True),   # expense_type
+                    gr.update(visible=True),   # annual_amount
+                    gr.update(visible=True, choices=family_member_choices, value=default_family_member),  # family_member_id
+                    gr.update(visible=True),   # start_date
+                    gr.update(visible=True),   # end_date
+                    gr.update(visible=True),   # notes
+                    gr.update(visible=True),   # form_buttons
+                    gr.update(visible=True),   # preview
+                    "",      # name value
+                    ExpenseType.HOUSING.value,  # expense_type value
+                    0.0,     # annual_amount value
+                    default_family_member,  # family_member_id value
+                    date.today().strftime("%Y-%m-%d"),  # start_date value
+                    "",      # end_date value
+                    "",      # notes value
+                    None,    # expense_id value
+                    ""       # result_message
+                )
+            else:
+                # Load expense details for editing
+                name_val, expense_type_val, annual_amount_val, family_member_id_val, start_date_val, end_date_val, notes_val, expense_id_val = get_expense_details(expense_id)
+                return (
+                    "form",  # view_state
+                    expense_id,  # selected_expense_id
+                    gr.update(visible=False),  # expense_table
+                    gr.update(visible=False),  # list_buttons
+                    gr.update(visible=False),  # selected_row_json
+                    gr.update(visible=True),   # name
+                    gr.update(visible=True),   # expense_type
+                    gr.update(visible=True),   # annual_amount
+                    gr.update(visible=True, choices=family_member_choices, value=str(family_member_id_val)),  # family_member_id
+                    gr.update(visible=True),   # start_date
+                    gr.update(visible=True),   # end_date
+                    gr.update(visible=True),   # notes
+                    gr.update(visible=True),   # form_buttons
+                    gr.update(visible=True),   # preview
+                    name_val,     # name value
+                    expense_type_val,  # expense_type value
+                    annual_amount_val,  # annual_amount value
+                    str(family_member_id_val),  # family_member_id value as string
+                    start_date_val,  # start_date value
+                    end_date_val,  # end_date value
+                    notes_val,    # notes value
+                    expense_id_val,  # expense_id value
+                    ""        # result_message
+                )
+        
+        # Switch to list view function
+        def show_list_view():
+            return (
+                "list",  # view_state
+                gr.update(visible=True),   # expense_table
+                gr.update(visible=True),   # list_buttons
+                gr.update(visible=True),   # selected_row_json
+                gr.update(visible=False),  # name
+                gr.update(visible=False),  # expense_type
+                gr.update(visible=False),  # annual_amount
+                gr.update(visible=False),  # family_member_id
+                gr.update(visible=False),  # start_date
+                gr.update(visible=False),  # end_date
+                gr.update(visible=False),  # notes
+                gr.update(visible=False),  # form_buttons
+                gr.update(visible=False),  # preview
+                get_expense_dataframe()  # refresh table data
+            )
+        
+        # Add new expense button
+        add_expense_button.click(
+            fn=show_form_view,
+            inputs=[],
+            outputs=[
+                view_state, 
+                selected_expense_id,
+                expense_table,
+                list_buttons,
+                selected_row_json,
+                name,
+                expense_type,
+                annual_amount,
+                family_member_id,
+                start_date,
+                end_date,
+                notes,
+                form_buttons,
+                preview,
+                name,
+                expense_type,
+                annual_amount,
+                family_member_id,
+                start_date,
+                end_date,
+                notes,
+                expense_id,
+                result_message
+            ]
+        )
+        
+        # Edit selected expense button
+        def edit_selected_expense(expense_id):
+            if expense_id is None:
+                return [
+                    "list", None,
+                    gr.update(visible=True), gr.update(visible=True), gr.update(visible=True),
+                    gr.update(visible=False), gr.update(visible=False), gr.update(visible=False),
+                    gr.update(visible=False), gr.update(visible=False), gr.update(visible=False),
+                    gr.update(visible=False), gr.update(visible=False), gr.update(visible=False),
+                    gr.update(visible=False),
+                    gr.update(), gr.update(), gr.update(), gr.update(), gr.update(),
+                    gr.update(), gr.update(),
+                    "Please select an expense to edit"
+                ]
+            return show_form_view("edit", expense_id)
+        
+        edit_expense_button.click(
+            fn=edit_selected_expense,
+            inputs=[selected_expense_id],
+            outputs=[
+                view_state,
+                selected_expense_id,
+                expense_table,
+                list_buttons,
+                selected_row_json,
+                name,
+                expense_type,
+                annual_amount,
+                family_member_id,
+                start_date,
+                end_date,
+                notes,
+                form_buttons,
+                preview,
+                name,
+                expense_type,
+                annual_amount,
+                family_member_id,
+                start_date,
+                end_date,
+                notes,
+                expense_id,
+                result_message
+            ]
+        )
+        
+        # Delete selected expense button
+        def delete_selected_expense(expense_id):
+            if expense_id is None:
+                return "Please select an expense to delete", None, get_expense_dataframe()
+            
+            # Perform the delete operation
+            result = delete_expense(expense_id)
+            
+            # Return message, clear selected ID, and update table
+            return result, None, get_expense_dataframe()
+        
+        delete_expense_button.click(
+            fn=delete_selected_expense,
+            inputs=[selected_expense_id],
+            outputs=[result_message, selected_expense_id, expense_table]
+        )
+        
+        # Refresh list button
+        refresh_list_button.click(
+            fn=get_expense_dataframe,
+            inputs=[],
+            outputs=[expense_table]
+        )
+        
+        # Cancel button
+        cancel_button.click(
+            fn=show_list_view,
+            inputs=[],
+            outputs=[
+                view_state,
+                expense_table,
+                list_buttons,
+                selected_row_json,
+                name,
+                expense_type,
+                annual_amount,
+                family_member_id,
+                start_date,
+                end_date,
+                notes,
+                form_buttons,
+                preview,
+                expense_table
+            ]
+        )
+        
+        # Save expense button
+        def save_expense_and_return(
+            name, expense_type, annual_amount, family_member_id, start_date, end_date, notes, expense_id
+        ):
+            result = create_or_update_expense(
+                name, expense_type, annual_amount, family_member_id, start_date, end_date, notes, expense_id
+            )
+            
+            # Return to list view with updated data
+            return [
+                "list",  # view_state
+                gr.update(visible=True),   # expense_table
+                gr.update(visible=True),   # list_buttons
+                gr.update(visible=True),   # selected_row_json
+                gr.update(visible=False),  # name
+                gr.update(visible=False),  # expense_type
+                gr.update(visible=False),  # annual_amount
+                gr.update(visible=False),  # family_member_id
+                gr.update(visible=False),  # start_date
+                gr.update(visible=False),  # end_date
+                gr.update(visible=False),  # notes
+                gr.update(visible=False),  # form_buttons
+                gr.update(visible=False),  # preview
+                result,                    # result_message
+                get_expense_dataframe()  # refresh table data
+            ]
+        
+        save_button.click(
+            fn=save_expense_and_return,
+            inputs=[
+                name, expense_type, annual_amount, family_member_id, start_date, end_date, notes, expense_id
+            ],
+            outputs=[
+                view_state,
+                expense_table,
+                list_buttons,
+                selected_row_json,
+                name,
+                expense_type,
+                annual_amount,
+                family_member_id,
+                start_date,
+                end_date,
+                notes,
+                form_buttons,
+                preview,
+                result_message,
+                expense_table
+            ]
+        )
+
+        # When the selected ID changes, update the JSON display
+        def update_selected_json(expense_id):
+            if expense_id is None:
+                return {}
+            
+            # Find the expense with this ID
+            expenses = get_expense_list()
+            for expense in expenses:
+                if expense.get('id') == expense_id:
+                    return expense
+            return {}
+        
+        selected_expense_id.change(
+            fn=update_selected_json,
+            inputs=[selected_expense_id],
+            outputs=[selected_row_json]
+        )
+
+
 # Main app setup
 def create_app():
     # Initialize database
@@ -1647,7 +2780,8 @@ def create_app():
             asset_tab()
             family_member_tab()
             account_tab()
-            # Future tabs for other entity types would go here
+            income_source_tab()
+            expense_tab()
     
     return app
 
