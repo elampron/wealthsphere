@@ -2137,9 +2137,11 @@ def income_source_tab():
             )
             
             # Return to list view with updated data
+            updated_table = get_income_source_dataframe()
+            
             return [
                 "list",  # view_state
-                gr.update(visible=True),   # income_table
+                gr.update(visible=True, value=updated_table),   # income_table - explicitly set the updated value
                 gr.update(visible=True),   # list_buttons
                 gr.update(visible=True),   # selected_row_json
                 gr.update(visible=False),  # name
@@ -2152,7 +2154,7 @@ def income_source_tab():
                 gr.update(visible=False),  # form_buttons
                 gr.update(visible=False),  # preview
                 result,                    # result_message
-                get_income_source_dataframe()  # refresh table data
+                updated_table              # refresh table data
             ]
         
         save_button.click(
@@ -2702,9 +2704,11 @@ def expense_tab():
             )
             
             # Return to list view with updated data
+            updated_table = get_expense_dataframe()
+            
             return [
                 "list",  # view_state
-                gr.update(visible=True),   # expense_table
+                gr.update(visible=True, value=updated_table),   # expense_table - explicitly set the updated value
                 gr.update(visible=True),   # list_buttons
                 gr.update(visible=True),   # selected_row_json
                 gr.update(visible=False),  # name
@@ -2717,7 +2721,7 @@ def expense_tab():
                 gr.update(visible=False),  # form_buttons
                 gr.update(visible=False),  # preview
                 result,                    # result_message
-                get_expense_dataframe()  # refresh table data
+                updated_table              # refresh table data
             ]
         
         save_button.click(
