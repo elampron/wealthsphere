@@ -190,10 +190,12 @@ def calculate_account_growth(
         start_value = projected_accounts[year][account.id]
     else:
         # For the first projection year, use current balance
-        start_value = account.current_balance
+        # Use actual_value property if available (this would come from the ValueRecord)
+        start_value = getattr(account, 'actual_value', 0.0) if hasattr(account, 'actual_value') else account.current_balance if hasattr(account, 'current_balance') else 0.0
     
     # Apply growth based on expected return rate
-    end_value = start_value * (1 + account.expected_return_rate)
+    expected_return_rate = getattr(account, 'expected_return_rate', 0.05) if hasattr(account, 'expected_return_rate') else 0.05
+    end_value = start_value * (1 + expected_return_rate)
     
     return end_value
 
@@ -213,8 +215,14 @@ def calculate_asset_growth(asset: Asset, year: int, current_year: int) -> float:
     # Calculate how many years of growth to apply
     years_of_growth = year - current_year
     
+    # Get the current value (from ValueRecord if available)
+    current_value = getattr(asset, 'actual_value', 0.0) if hasattr(asset, 'actual_value') else asset.current_value if hasattr(asset, 'current_value') else 0.0
+    
+    # Get the growth rate (handle possible missing attribute)
+    expected_annual_appreciation = getattr(asset, 'expected_annual_appreciation', 0.02) if hasattr(asset, 'expected_annual_appreciation') else 0.02
+    
     # Apply compound growth based on expected appreciation rate
-    projected_value = asset.current_value * ((1 + asset.expected_annual_appreciation) ** years_of_growth)
+    projected_value = current_value * ((1 + expected_annual_appreciation) ** years_of_growth)
     
     return projected_value
 
@@ -245,8 +253,14 @@ def calculate_income_for_year(
     # Calculate years of growth
     years_of_growth = year - income_source.start_year
     
+    # Get the current amount (from ValueRecord if available)
+    base_amount = getattr(income_source, 'actual_value', 0.0) if hasattr(income_source, 'actual_value') else getattr(income_source, 'amount', 0.0) if hasattr(income_source, 'amount') else 0.0
+    
+    # Get growth rate (handle possible missing attribute)
+    expected_growth_rate = getattr(income_source, 'expected_growth_rate', 0.0) if hasattr(income_source, 'expected_growth_rate') else 0.0
+    
     # Apply compound growth based on expected growth rate
-    projected_amount = income_source.amount * ((1 + income_source.expected_growth_rate) ** years_of_growth)
+    projected_amount = base_amount * ((1 + expected_growth_rate) ** years_of_growth)
     
     return projected_amount
 
@@ -275,8 +289,14 @@ def calculate_expense_for_year(
     # Calculate years of growth
     years_of_growth = year - expense.start_year
     
+    # Get the current amount (from ValueRecord if available)
+    base_amount = getattr(expense, 'actual_value', 0.0) if hasattr(expense, 'actual_value') else getattr(expense, 'amount', 0.0) if hasattr(expense, 'amount') else 0.0
+    
+    # Get growth rate (handle possible missing attribute)
+    expected_growth_rate = getattr(expense, 'expected_growth_rate', 0.0) if hasattr(expense, 'expected_growth_rate') else 0.0
+    
     # Apply compound growth based on expected growth rate
-    projected_amount = expense.amount * ((1 + expense.expected_growth_rate) ** years_of_growth)
+    projected_amount = base_amount * ((1 + expected_growth_rate) ** years_of_growth)
     
     return projected_amount
 
@@ -311,20 +331,22 @@ def calculate_net_worth(
         member = next((m for m in family_members if m.id == account.family_member_id), None)
         if member and is_alive(member, year):
             # Log for debugging
-            print(f"Processing account {account.name}, type: {account.account_type}, current balance: {account.current_balance}")
+            current_balance = getattr(account, 'actual_value', 0.0) if hasattr(account, 'actual_value') else account.current_balance if hasattr(account, 'current_balance') else 0.0
+            print(f"Processing account {account.name}, type: {account.account_type}, current balance: {current_balance}")
             
             if year in projected_accounts and account.id in projected_accounts[year]:
                 account_value = projected_accounts[year][account.id]
                 print(f"  Using projected value for year {year}: {account_value}")
                 total_net_worth += account_value
             else:
-                print(f"  Using current balance: {account.current_balance}")
-                total_net_worth += account.current_balance
+                print(f"  Using current balance: {current_balance}")
+                total_net_worth += current_balance
     
     # Add asset values
     for asset in assets:
+        current_value = getattr(asset, 'actual_value', 0.0) if hasattr(asset, 'actual_value') else asset.current_value if hasattr(asset, 'current_value') else 0.0
         projected_value = calculate_asset_growth(asset, year, current_year)
-        print(f"Processing asset {asset.name}, type: {asset.asset_type}, current value: {asset.current_value}, projected: {projected_value}")
+        print(f"Processing asset {asset.name}, type: {asset.asset_type}, current value: {current_value}, projected: {projected_value}")
         total_net_worth += projected_value
     
     print(f"Total net worth for year {year}: {total_net_worth}")

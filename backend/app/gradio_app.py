@@ -21,9 +21,20 @@ from app.models import (
     EntityType,
     ValueRecord,
     Scenario,
-    RelationshipType
+    RelationshipType,
+    InsurancePolicy
 )
 from app.services import value_service
+from app.services.calculations import (
+    calculate_net_worth,
+    calculate_cash_flow,
+    calculate_withdrawal_strategy,
+    calculate_account_growth,
+    calculate_asset_growth,
+    is_alive,
+    calculate_rrsp_to_rrif_conversion
+)
+from app.schemas.projections import ProjectionParameters
 
 
 # Ensure database is set up
@@ -1748,6 +1759,35 @@ def get_income_source_list() -> List[Dict[str, Any]]:
     return result
 
 
+def delete_income_source(income_id: int) -> str:
+    """Delete an income source by ID"""
+    db = next(get_db_session())
+    
+    try:
+        income = db.query(IncomeSource).filter(IncomeSource.id == income_id).first()
+        if not income:
+            return f"Error: Income source with ID {income_id} not found"
+        
+        # Delete associated value records first
+        value_records = db.query(ValueRecord).filter(
+            ValueRecord.entity_type == EntityType.INCOME_SOURCE,
+            ValueRecord.entity_id == income_id
+        ).all()
+        
+        for record in value_records:
+            db.delete(record)
+        
+        # Now delete the income source
+        income_name = income.name
+        db.delete(income)
+        db.commit()
+        
+        return f"Income source '{income_name}' deleted successfully"
+    except Exception as e:
+        db.rollback()
+        return f"Error deleting income source: {str(e)}"
+
+
 def get_income_source_details(income_id: int) -> Tuple:
     """Get details for a specific income source"""
     db = next(get_db_session())
@@ -2767,6 +2807,766 @@ def expense_tab():
         )
 
 
+# Projections functions
+def generate_net_worth_projections(
+    start_year: int, 
+    end_year: int, 
+    inflation_rate: float, 
+    province: str
+) -> pd.DataFrame:
+    """Generate net worth projections from start_year to end_year"""
+    db = next(get_db_session())
+    user = ensure_demo_user(db)
+    
+    # Create projection parameters
+    params = ProjectionParameters(
+        start_year=start_year,
+        end_year=end_year,
+        inflation_rate=inflation_rate/100.0,  # Convert from percentage to decimal
+        province=province
+    )
+    
+    # Get required data for projections
+    family_members = db.query(FamilyMember).filter(FamilyMember.user_id == user.id).all()
+    investment_accounts_db = db.query(InvestmentAccount).filter(InvestmentAccount.user_id == user.id).all()
+    assets_db = db.query(Asset).filter(Asset.user_id == user.id).all()
+    
+    # Fetch value records and prepare data
+    investment_accounts = []
+    for account in investment_accounts_db:
+        account_dict = value_service.get_entity_with_actual_value(
+            db=db,
+            entity_type=EntityType.INVESTMENT_ACCOUNT,
+            entity_id=account.id
+        )
+        
+        # Create account copy with actual value
+        account_copy = InvestmentAccount(
+            id=account.id,
+            user_id=account.user_id,
+            family_member_id=account.family_member_id,
+            name=account.name,
+            account_type=account.account_type,
+            institution=account.institution,
+            notes=account.notes,
+        )
+        
+        # Add actual value attribute using setattr
+        actual_value = account_dict.get('actual_value', 0.0) if account_dict else 0.0
+        setattr(account_copy, 'actual_value', actual_value)
+        setattr(account_copy, 'expected_return_rate', 0.05)  # Default 5% return rate
+        setattr(account_copy, 'is_taxable', True)
+        setattr(account_copy, 'contribution_room', 0.0)
+        
+        investment_accounts.append(account_copy)
+    
+    # Prepare assets with their actual values
+    assets = []
+    for asset in assets_db:
+        asset_dict = value_service.get_entity_with_actual_value(
+            db=db, 
+            entity_type=EntityType.ASSET,
+            entity_id=asset.id
+        )
+        
+        # Create asset copy with actual value
+        asset_copy = Asset(
+            id=asset.id,
+            user_id=asset.user_id,
+            name=asset.name,
+            asset_type=asset.asset_type,
+            expected_annual_appreciation=asset.expected_annual_appreciation,
+            is_primary_residence=asset.is_primary_residence,
+            notes=asset.notes
+        )
+        
+        # Add actual value attribute using setattr
+        actual_value = asset_dict.get('actual_value', 0.0) if asset_dict else 0.0
+        setattr(asset_copy, 'actual_value', actual_value)
+        
+        assets.append(asset_copy)
+    
+    # Track projected account values by year
+    projected_accounts = {}
+    
+    # Get current year for baseline
+    current_year = date.today().year
+    
+    # Generate year-by-year projections
+    yearly_projections = {}
+    
+    for year in range(start_year, end_year + 1):
+        # Initialize tracking for this year
+        if year not in projected_accounts:
+            projected_accounts[year] = {}
+            
+        # RRSP to RRIF conversions that should happen in this year
+        for account in investment_accounts:
+            member = next((m for m in family_members if m.id == account.family_member_id), None)
+            if not member:
+                continue
+                
+            # Check if this account should convert from RRSP to RRIF
+            if calculate_rrsp_to_rrif_conversion(account, member, year):
+                # Convert the account for projections - note this doesn't affect the database
+                account.account_type = AccountType.RRIF
+        
+        # Calculate projected account values for this year
+        for account in investment_accounts:
+            # Skip projections for deceased account holders
+            member = next((m for m in family_members if m.id == account.family_member_id), None)
+            if not member or not is_alive(member, year):
+                projected_accounts[year][account.id] = 0
+                continue
+                
+            # Calculate growth for this account
+            projected_accounts[year][account.id] = calculate_account_growth(
+                account, 
+                year, 
+                projected_accounts
+            )
+        
+        # Calculate net worth for this year
+        net_worth = calculate_net_worth(
+            family_members,
+            investment_accounts,
+            assets,
+            year,
+            current_year,
+            projected_accounts
+        )
+        
+        # Breakdown by category
+        rrsp_total = sum(
+            projected_accounts[year].get(a.id, getattr(a, 'actual_value', 0.0))
+            for a in investment_accounts 
+            if a.account_type == AccountType.RRSP
+        )
+        
+        tfsa_total = sum(
+            projected_accounts[year].get(a.id, getattr(a, 'actual_value', 0.0))
+            for a in investment_accounts 
+            if a.account_type == AccountType.TFSA
+        )
+        
+        non_registered_total = sum(
+            projected_accounts[year].get(a.id, getattr(a, 'actual_value', 0.0))
+            for a in investment_accounts 
+            if a.account_type == AccountType.NON_REGISTERED
+        )
+        
+        rrif_total = sum(
+            projected_accounts[year].get(a.id, getattr(a, 'actual_value', 0.0))
+            for a in investment_accounts 
+            if a.account_type == AccountType.RRIF
+        )
+        
+        other_investments_total = sum(
+            projected_accounts[year].get(a.id, getattr(a, 'actual_value', 0.0))
+            for a in investment_accounts 
+            if a.account_type not in [AccountType.RRSP, AccountType.TFSA, AccountType.NON_REGISTERED, AccountType.RRIF]
+        )
+        
+        # Sum up assets by type
+        property_total = sum(
+            calculate_asset_growth(a, year, current_year)
+            for a in assets
+            if a.asset_type in [AssetType.PRIMARY_RESIDENCE, AssetType.SECONDARY_PROPERTY]
+        )
+        
+        business_total = sum(
+            calculate_asset_growth(a, year, current_year)
+            for a in assets
+            if a.asset_type == AssetType.BUSINESS
+        )
+        
+        other_assets_total = sum(
+            calculate_asset_growth(a, year, current_year)
+            for a in assets
+            if a.asset_type not in [AssetType.PRIMARY_RESIDENCE, AssetType.SECONDARY_PROPERTY, AssetType.BUSINESS]
+        )
+        
+        yearly_projections[str(year)] = {
+            "total_net_worth": net_worth,
+            "rrsp_total": rrsp_total,
+            "tfsa_total": tfsa_total,
+            "non_registered_total": non_registered_total,
+            "rrif_total": rrif_total,
+            "other_investments_total": other_investments_total,
+            "property_total": property_total,
+            "business_total": business_total,
+            "other_assets_total": other_assets_total
+        }
+    
+    # Convert to DataFrame for display
+    data = []
+    for year, projection in yearly_projections.items():
+        data.append({
+            "Year": year,
+            "Net Worth": f"${projection['total_net_worth']:,.2f}",
+            "RRSP": f"${projection['rrsp_total']:,.2f}",
+            "TFSA": f"${projection['tfsa_total']:,.2f}",
+            "Non-Registered": f"${projection['non_registered_total']:,.2f}",
+            "RRIF": f"${projection['rrif_total']:,.2f}",
+            "Property": f"${projection['property_total']:,.2f}",
+            "Business": f"${projection['business_total']:,.2f}",
+            "Other Assets": f"${projection['other_assets_total']:,.2f}"
+        })
+    
+    return pd.DataFrame(data)
+
+
+def generate_cash_flow_projections(
+    start_year: int, 
+    end_year: int, 
+    inflation_rate: float, 
+    province: str
+) -> pd.DataFrame:
+    """Generate cash flow projections from start_year to end_year"""
+    db = next(get_db_session())
+    user = ensure_demo_user(db)
+    
+    # Create projection parameters
+    params = ProjectionParameters(
+        start_year=start_year,
+        end_year=end_year,
+        inflation_rate=inflation_rate/100.0,  # Convert from percentage to decimal
+        province=province
+    )
+    
+    # Get required data for projections
+    family_members = db.query(FamilyMember).filter(FamilyMember.user_id == user.id).all()
+    investment_accounts_db = db.query(InvestmentAccount).filter(InvestmentAccount.user_id == user.id).all()
+    income_sources_db = db.query(IncomeSource).filter(IncomeSource.user_id == user.id).all()
+    expenses_db = db.query(Expense).filter(Expense.user_id == user.id).all()
+    insurance_policies = db.query(InsurancePolicy).filter(InsurancePolicy.user_id == user.id).all() if 'InsurancePolicy' in globals() else []
+    
+    # Fetch value records and prepare investment accounts
+    investment_accounts = []
+    for account in investment_accounts_db:
+        account_dict = value_service.get_entity_with_actual_value(
+            db=db,
+            entity_type=EntityType.INVESTMENT_ACCOUNT,
+            entity_id=account.id
+        )
+        
+        # Create account copy with actual value
+        account_copy = InvestmentAccount(
+            id=account.id,
+            user_id=account.user_id,
+            family_member_id=account.family_member_id,
+            name=account.name,
+            account_type=account.account_type,
+            institution=account.institution,
+            notes=account.notes,
+        )
+        
+        # Add actual value attribute using setattr
+        actual_value = account_dict.get('actual_value', 0.0) if account_dict else 0.0
+        setattr(account_copy, 'actual_value', actual_value)
+        setattr(account_copy, 'expected_return_rate', 0.05)  # Default 5% return rate
+        
+        investment_accounts.append(account_copy)
+    
+    # Fetch value records and prepare income sources
+    income_sources = []
+    for income in income_sources_db:
+        # Get the value record for the income source
+        scenario = value_service.get_actual_scenario(db)
+        value_record = db.query(ValueRecord).filter(
+            ValueRecord.entity_type == EntityType.INCOME_SOURCE,
+            ValueRecord.entity_id == income.id,
+            ValueRecord.scenario_id == scenario.id
+        ).order_by(ValueRecord.value_date.desc()).first()
+        
+        income_copy = IncomeSource(
+            id=income.id,
+            user_id=income.user_id,
+            name=income.name,
+            income_type=income.income_type,
+            start_year=income.start_year,
+            end_year=income.end_year,
+            family_member_id=income.family_member_id,
+            notes=income.notes,
+            expected_growth_rate=income.expected_growth_rate if hasattr(income, 'expected_growth_rate') else 0.0,
+            is_taxable=income.is_taxable if hasattr(income, 'is_taxable') else True
+        )
+        
+        # Add actual value
+        actual_value = value_record.value_amount if value_record else 0.0
+        setattr(income_copy, 'actual_value', actual_value)
+        
+        income_sources.append(income_copy)
+    
+    # Fetch value records and prepare expenses
+    expenses = []
+    for expense in expenses_db:
+        # Get the value record for the expense
+        scenario = value_service.get_actual_scenario(db)
+        value_record = db.query(ValueRecord).filter(
+            ValueRecord.entity_type == EntityType.EXPENSE,
+            ValueRecord.entity_id == expense.id,
+            ValueRecord.scenario_id == scenario.id
+        ).order_by(ValueRecord.value_date.desc()).first()
+        
+        expense_copy = Expense(
+            id=expense.id,
+            user_id=expense.user_id,
+            name=expense.name,
+            expense_type=expense.expense_type,
+            start_year=expense.start_year,
+            end_year=expense.end_year,
+            family_member_id=expense.family_member_id,
+            notes=expense.notes,
+            expected_growth_rate=expense.expected_growth_rate if hasattr(expense, 'expected_growth_rate') else 0.0,
+            is_tax_deductible=expense.is_tax_deductible if hasattr(expense, 'is_tax_deductible') else False
+        )
+        
+        # Add actual value
+        actual_value = value_record.value_amount if value_record else 0.0
+        setattr(expense_copy, 'actual_value', actual_value)
+        
+        expenses.append(expense_copy)
+    
+    # Track projected account values by year
+    projected_accounts = {}
+    
+    # Get current year for baseline
+    current_year = date.today().year
+    
+    # Generate year-by-year projections
+    yearly_projections = {}
+    
+    for year in range(start_year, end_year + 1):
+        # Initialize tracking for this year
+        if year not in projected_accounts:
+            projected_accounts[year] = {}
+        
+        # RRSP to RRIF conversions that should happen in this year
+        for account in investment_accounts:
+            member = next((m for m in family_members if m.id == account.family_member_id), None)
+            if not member:
+                continue
+                
+            # Check if this account should convert from RRSP to RRIF
+            if calculate_rrsp_to_rrif_conversion(account, member, year):
+                # Create new RRIF account for projections
+                account.account_type = AccountType.RRIF
+        
+        # Calculate cash flow for this year
+        cash_flow = calculate_cash_flow(
+            family_members,
+            income_sources,
+            expenses,
+            insurance_policies,
+            year,
+            current_year
+        )
+        
+        # Calculate withdrawal strategy if income doesn't cover expenses
+        withdrawal_strategy = None
+        if cash_flow["net_cash_flow"] < 0:
+            withdrawal_strategy = calculate_withdrawal_strategy(
+                family_members,
+                investment_accounts,
+                income_sources,
+                expenses,
+                year,
+                current_year,
+                projected_accounts
+            )
+            
+            # Update projected account values after withdrawals
+            for account_id, remaining in withdrawal_strategy["remaining_balance"].items():
+                projected_accounts[year][account_id] = remaining
+        else:
+            # No withdrawals needed, update account values with growth only
+            for account in investment_accounts:
+                # Skip projections for deceased account holders
+                member = next((m for m in family_members if m.id == account.family_member_id), None)
+                if not member or not is_alive(member, year):
+                    projected_accounts[year][account.id] = 0
+                    continue
+                    
+                # Calculate growth for this account
+                projected_accounts[year][account.id] = calculate_account_growth(
+                    account, 
+                    year, 
+                    projected_accounts
+                )
+        
+        # Check for deaths in this year and add death benefits
+        death_benefits = []
+        for member in family_members:
+            # If they're alive this year but not next year
+            if is_alive(member, year) and not is_alive(member, year + 1):
+                # Placeholder for death benefit calculation
+                benefit = 0
+                death_benefits.append({
+                    "family_member_id": member.id,
+                    "family_member_name": f"{member.first_name} {member.last_name}",
+                    "benefit_amount": benefit
+                })
+        
+        # Store the year's projection
+        yearly_projections[str(year)] = {
+            "total_income": cash_flow["total_income"],
+            "total_expenses": cash_flow["total_expenses"],
+            "net_cash_flow": cash_flow["net_cash_flow"],
+            "withdrawal_strategy": withdrawal_strategy,
+            "death_benefits": death_benefits
+        }
+    
+    # Convert to DataFrame for display
+    data = []
+    for year, projection in yearly_projections.items():
+        withdrawal_amount = 0
+        if projection['withdrawal_strategy'] and 'withdrawals' in projection['withdrawal_strategy']:
+            withdrawal_amount = sum(projection['withdrawal_strategy']['withdrawals'].values())
+        
+        data.append({
+            "Year": year,
+            "Income": f"${projection['total_income']:,.2f}",
+            "Expenses": f"${projection['total_expenses']:,.2f}",
+            "Net Cash Flow": f"${projection['net_cash_flow']:,.2f}",
+            "Withdrawal Amount": f"${withdrawal_amount:,.2f}" if withdrawal_amount > 0 else "$0.00",
+            "Cash Flow After Withdrawals": f"${max(0, projection['net_cash_flow']):,.2f}"
+        })
+    
+    return pd.DataFrame(data)
+
+
+def generate_withdrawal_projections(
+    start_year: int, 
+    end_year: int, 
+    inflation_rate: float, 
+    province: str
+) -> pd.DataFrame:
+    """Generate detailed withdrawal projections from start_year to end_year"""
+    db = next(get_db_session())
+    user = ensure_demo_user(db)
+    
+    # Create projection parameters
+    params = ProjectionParameters(
+        start_year=start_year,
+        end_year=end_year,
+        inflation_rate=inflation_rate/100.0,  # Convert from percentage to decimal
+        province=province
+    )
+    
+    # Get required data for projections
+    family_members = db.query(FamilyMember).filter(FamilyMember.user_id == user.id).all()
+    investment_accounts_db = db.query(InvestmentAccount).filter(InvestmentAccount.user_id == user.id).all()
+    income_sources_db = db.query(IncomeSource).filter(IncomeSource.user_id == user.id).all()
+    expenses_db = db.query(Expense).filter(Expense.user_id == user.id).all()
+    
+    # Fetch value records and prepare investment accounts
+    investment_accounts = []
+    for account in investment_accounts_db:
+        account_dict = value_service.get_entity_with_actual_value(
+            db=db,
+            entity_type=EntityType.INVESTMENT_ACCOUNT,
+            entity_id=account.id
+        )
+        
+        # Create account copy with actual value
+        account_copy = InvestmentAccount(
+            id=account.id,
+            user_id=account.user_id,
+            family_member_id=account.family_member_id,
+            name=account.name,
+            account_type=account.account_type,
+            institution=account.institution,
+            notes=account.notes,
+        )
+        
+        # Add actual value attribute using setattr
+        actual_value = account_dict.get('actual_value', 0.0) if account_dict else 0.0
+        setattr(account_copy, 'actual_value', actual_value)
+        setattr(account_copy, 'expected_return_rate', 0.05)  # Default 5% return rate
+        
+        investment_accounts.append(account_copy)
+    
+    # Fetch value records and prepare income sources
+    income_sources = []
+    for income in income_sources_db:
+        # Get the value record for the income source
+        scenario = value_service.get_actual_scenario(db)
+        value_record = db.query(ValueRecord).filter(
+            ValueRecord.entity_type == EntityType.INCOME_SOURCE,
+            ValueRecord.entity_id == income.id,
+            ValueRecord.scenario_id == scenario.id
+        ).order_by(ValueRecord.value_date.desc()).first()
+        
+        income_copy = IncomeSource(
+            id=income.id,
+            user_id=income.user_id,
+            name=income.name,
+            income_type=income.income_type,
+            start_year=income.start_year,
+            end_year=income.end_year,
+            family_member_id=income.family_member_id,
+            notes=income.notes,
+            expected_growth_rate=income.expected_growth_rate if hasattr(income, 'expected_growth_rate') else 0.0,
+            is_taxable=income.is_taxable if hasattr(income, 'is_taxable') else True
+        )
+        
+        # Add actual value
+        actual_value = value_record.value_amount if value_record else 0.0
+        setattr(income_copy, 'actual_value', actual_value)
+        
+        income_sources.append(income_copy)
+    
+    # Fetch value records and prepare expenses
+    expenses = []
+    for expense in expenses_db:
+        # Get the value record for the expense
+        scenario = value_service.get_actual_scenario(db)
+        value_record = db.query(ValueRecord).filter(
+            ValueRecord.entity_type == EntityType.EXPENSE,
+            ValueRecord.entity_id == expense.id,
+            ValueRecord.scenario_id == scenario.id
+        ).order_by(ValueRecord.value_date.desc()).first()
+        
+        expense_copy = Expense(
+            id=expense.id,
+            user_id=expense.user_id,
+            name=expense.name,
+            expense_type=expense.expense_type,
+            start_year=expense.start_year,
+            end_year=expense.end_year,
+            family_member_id=expense.family_member_id,
+            notes=expense.notes,
+            expected_growth_rate=expense.expected_growth_rate if hasattr(expense, 'expected_growth_rate') else 0.0,
+            is_tax_deductible=expense.is_tax_deductible if hasattr(expense, 'is_tax_deductible') else False
+        )
+        
+        # Add actual value
+        actual_value = value_record.value_amount if value_record else 0.0
+        setattr(expense_copy, 'actual_value', actual_value)
+        
+        expenses.append(expense_copy)
+    
+    # Track projected account values by year
+    projected_accounts = {}
+    
+    # Get current year for baseline
+    current_year = date.today().year
+    
+    # Generate year-by-year projections
+    yearly_detailed_withdrawals = []
+    
+    for year in range(start_year, end_year + 1):
+        # Initialize tracking for this year
+        if year not in projected_accounts:
+            projected_accounts[year] = {}
+        
+        # Calculate cash flow for this year
+        cash_flow = calculate_cash_flow(
+            family_members,
+            income_sources,
+            expenses,
+            [],  # No insurance policies for now
+            year,
+            current_year
+        )
+        
+        # Only proceed with withdrawal strategy if income doesn't cover expenses
+        if cash_flow["net_cash_flow"] < 0:
+            # Calculate withdrawal strategy
+            withdrawal_strategy = calculate_withdrawal_strategy(
+                family_members,
+                investment_accounts,
+                income_sources,
+                expenses,
+                year,
+                current_year,
+                projected_accounts
+            )
+            
+            # Update projected account values after withdrawals
+            for account_id, remaining in withdrawal_strategy["remaining_balance"].items():
+                projected_accounts[year][account_id] = remaining
+            
+            # Create detailed withdrawal data
+            for account in investment_accounts:
+                # Skip accounts with no withdrawals
+                if account.id not in withdrawal_strategy["withdrawals"] or withdrawal_strategy["withdrawals"][account.id] == 0:
+                    continue
+                
+                # Get family member name
+                member = next((m for m in family_members if m.id == account.family_member_id), None)
+                member_name = f"{member.first_name} {member.last_name}" if member else "Unknown"
+                
+                # Add to detailed withdrawals
+                yearly_detailed_withdrawals.append({
+                    "Year": year,
+                    "Account": account.name,
+                    "Account Type": account.account_type,
+                    "Family Member": member_name,
+                    "Starting Value": f"${(withdrawal_strategy['withdrawals'][account.id] + projected_accounts[year][account.id]):,.2f}",
+                    "Withdrawal": f"${withdrawal_strategy['withdrawals'][account.id]:,.2f}",
+                    "Ending Value": f"${projected_accounts[year][account.id]:,.2f}"
+                })
+        else:
+            # No withdrawals needed, update account values with growth only
+            for account in investment_accounts:
+                # Skip projections for deceased account holders
+                member = next((m for m in family_members if m.id == account.family_member_id), None)
+                if not member or not is_alive(member, year):
+                    projected_accounts[year][account.id] = 0
+                    continue
+                    
+                # Calculate growth for this account
+                projected_accounts[year][account.id] = calculate_account_growth(
+                    account, 
+                    year, 
+                    projected_accounts
+                )
+    
+    # Return empty DataFrame if no withdrawals
+    if not yearly_detailed_withdrawals:
+        return pd.DataFrame(columns=["Year", "Account", "Account Type", "Family Member", "Starting Value", "Withdrawal", "Ending Value"])
+    
+    return pd.DataFrame(yearly_detailed_withdrawals)
+
+
+# Projections tab
+def projections_tab():
+    with gr.Tab("Projections"):
+        # State to track active sub-tab
+        active_subtab = gr.State("net-worth")
+        
+        # Projection parameters form
+        gr.Markdown("## Financial Projections")
+        gr.Markdown("Set parameters and generate future financial projections")
+        
+        with gr.Row():
+            with gr.Column(scale=2):
+                # Parameters form
+                start_year = gr.Number(
+                    label="Start Year", 
+                    value=date.today().year + 1,
+                    precision=0,
+                    minimum=date.today().year,
+                    maximum=date.today().year + 50
+                )
+                end_year = gr.Number(
+                    label="End Year", 
+                    value=date.today().year + 10,
+                    precision=0,
+                    minimum=date.today().year + 1,
+                    maximum=date.today().year + 50
+                )
+                inflation_rate = gr.Slider(
+                    label="Inflation Rate (%)", 
+                    value=2.0,
+                    minimum=0.0,
+                    maximum=10.0,
+                    step=0.1
+                )
+                province = gr.Dropdown(
+                    label="Province", 
+                    choices=["AB", "BC", "MB", "NB", "NL", "NS", "NT", "NU", "ON", "PE", "QC", "SK", "YT"],
+                    value="ON"
+                )
+                
+                generate_button = gr.Button("Generate Projections", variant="primary")
+            
+            with gr.Column(scale=1):
+                # Info box with tips
+                gr.Markdown("""
+                ### Projection Tips
+                - Start year should be at least the current year
+                - End year should be reasonable for your planning horizon
+                - Projections use data from your assets, accounts, income, and expenses
+                - Add or update your data in the respective tabs for more accurate projections
+                """)
+        
+        # Sub-tabs for different projection types
+        with gr.Tabs() as subtabs:
+            with gr.TabItem("Net Worth Projections", id="net-worth"):
+                net_worth_df = gr.DataFrame(label="Net Worth Projections by Year")
+            
+            with gr.TabItem("Cash Flow Projections", id="cash-flow"):
+                cash_flow_df = gr.DataFrame(label="Cash Flow Projections by Year")
+            
+            with gr.TabItem("Detailed Withdrawals", id="withdrawals"):
+                withdrawals_df = gr.DataFrame(label="Detailed Withdrawal Strategy")
+        
+        # Function to update the active subtab
+        def change_subtab(evt: gr.SelectData):
+            return evt.target.id
+        
+        for tab in subtabs.children:
+            tab.select(change_subtab, None, outputs=[active_subtab])
+        
+        # Status message
+        status_message = gr.Textbox(label="Status", value="Set parameters and click 'Generate Projections'")
+        
+        # Function to generate projections based on parameters
+        def generate_projections(start_year, end_year, inflation_rate, province, active_tab):
+            if end_year <= start_year:
+                return (
+                    pd.DataFrame(), 
+                    pd.DataFrame(), 
+                    pd.DataFrame(),
+                    "Error: End year must be greater than start year"
+                )
+            
+            try:
+                if active_tab == "net-worth":
+                    net_worth_projection = generate_net_worth_projections(
+                        start_year, end_year, inflation_rate, province
+                    )
+                    return (
+                        net_worth_projection,
+                        generate_cash_flow_projections(start_year, end_year, inflation_rate, province),
+                        generate_withdrawal_projections(start_year, end_year, inflation_rate, province),
+                        f"Net worth projections generated from {start_year} to {end_year}"
+                    )
+                elif active_tab == "cash-flow":
+                    cash_flow_projection = generate_cash_flow_projections(
+                        start_year, end_year, inflation_rate, province
+                    )
+                    return (
+                        generate_net_worth_projections(start_year, end_year, inflation_rate, province),
+                        cash_flow_projection,
+                        generate_withdrawal_projections(start_year, end_year, inflation_rate, province),
+                        f"Cash flow projections generated from {start_year} to {end_year}"
+                    )
+                elif active_tab == "withdrawals":
+                    withdrawal_projection = generate_withdrawal_projections(
+                        start_year, end_year, inflation_rate, province
+                    )
+                    return (
+                        generate_net_worth_projections(start_year, end_year, inflation_rate, province),
+                        generate_cash_flow_projections(start_year, end_year, inflation_rate, province),
+                        withdrawal_projection,
+                        f"Withdrawal projections generated from {start_year} to {end_year}"
+                    )
+                else:
+                    return (
+                        pd.DataFrame(), 
+                        pd.DataFrame(), 
+                        pd.DataFrame(),
+                        "Error: Unknown projection type"
+                    )
+            except Exception as e:
+                return (
+                    pd.DataFrame(), 
+                    pd.DataFrame(), 
+                    pd.DataFrame(),
+                    f"Error generating projections: {str(e)}"
+                )
+        
+        generate_button.click(
+            fn=generate_projections,
+            inputs=[start_year, end_year, inflation_rate, province, active_subtab],
+            outputs=[net_worth_df, cash_flow_df, withdrawals_df, status_message]
+        )
+
+
 # Main app setup
 def create_app():
     # Initialize database
@@ -2786,6 +3586,7 @@ def create_app():
             account_tab()
             income_source_tab()
             expense_tab()
+            projections_tab()  # Add the projections tab
     
     return app
 
